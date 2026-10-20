@@ -1,15 +1,37 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 type CacheEntry = { data: unknown; at: number }
 
+/** Keeps the largest pages (playlists) from growing the renderer cache forever. */
+const MAX_ENTRIES = 60
+
 const cache = new Map<string, CacheEntry>()
 const inflight = new Map<string, Promise<unknown>>()
+
+function store(key: string, data: unknown, at = Date.now()): void {
+  cache.delete(key)
+  cache.set(key, { data, at })
+  while (cache.size > MAX_ENTRIES) {
+    cache.delete(cache.keys().next().value!)
+  }
+}
+
+function cached(key: string): CacheEntry | undefined {
+  const entry = cache.get(key)
+  if (!entry) return undefined
+  // Refresh recency without updating `at` (that controls freshness).
+  cache.delete(key)
+  cache.set(key, entry)
+  return entry
+}
 
 export type QueryState<T> = {
   data: T | null
   error: string | null
   loading: boolean
   reload: () => void
+  /** Update data locally (pagination, optimistic edits) and keep the cache in sync. */
+  setData: (updater: T | ((previous: T) => T)) => void
 }
 
 /** Tiny stale-while-revalidate query layer: in-memory cache + in-flight dedupe (PLAN §6). */
@@ -20,8 +42,8 @@ export function useIpcQuery<T>(
 ): QueryState<T> {
   const fetcherRef = useRef(fetcher)
   fetcherRef.current = fetcher
-  const [data, setData] = useState<T | null>(() => {
-    const hit = cache.get(key)
+  const [data, setDataState] = useState<T | null>(() => {
+    const hit = cached(key)
     return hit && Date.now() - hit.at < staleTime ? (hit.data as T) : null
   })
   const [error, setError] = useState<string | null>(null)
@@ -33,9 +55,9 @@ export function useIpcQuery<T>(
       setLoading(false)
       return
     }
-    const hit = cache.get(key)
+    const hit = cached(key)
     if (hit && Date.now() - hit.at < staleTime && nonce === 0) {
-      setData(hit.data as T)
+      setDataState(hit.data as T)
       setLoading(false)
       return
     }
@@ -46,8 +68,8 @@ export function useIpcQuery<T>(
     inflight.set(key, promise)
     promise
       .then((value) => {
-        cache.set(key, { data: value, at: Date.now() })
-        if (!cancelled) setData(value)
+        store(key, value)
+        if (!cancelled) setDataState(value)
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err))
@@ -62,7 +84,19 @@ export function useIpcQuery<T>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, enabled, nonce])
 
-  return { data, error, loading, reload: () => setNonce((n) => n + 1) }
+  const setData = useCallback(
+    (updater: T | ((previous: T) => T)) => {
+      setDataState((previous) => {
+        if (previous === null) return previous
+        const next = typeof updater === "function" ? (updater as (value: T) => T)(previous) : updater
+        store(key, next)
+        return next
+      })
+    },
+    [key],
+  )
+
+  return { data, error, loading, reload: () => setNonce((n) => n + 1), setData }
 }
 
 export function clearQueryCache(prefix = ""): void {

@@ -33,17 +33,40 @@ export function mediaHeadersFor(url: string): Record<string, string> {
 }
 
 export async function cookieHeader(sess = ytSession()): Promise<string> {
-  const cookies = await sess.cookies.get({ url: "https://music.youtube.com" })
-  return cookies.map((c) => `${c.name}=${c.value}`).join("; ")
+  return (await cookieBundle(sess)).header
 }
 
 export async function signingCookie(sess = ytSession()): Promise<string | null> {
+  return (await cookieBundle(sess)).signing
+}
+
+const COOKIE_CACHE_MS = 30_000
+type CookieBundle = { at: number; header: string; signing: string | null }
+const cookieCaches = new WeakMap<Session, CookieBundle>()
+
+/** One Chromium cookie round-trip per request burst instead of two per InnerTube call. */
+async function cookieBundle(sess: Session): Promise<CookieBundle> {
+  const cached = cookieCaches.get(sess)
+  if (cached && Date.now() - cached.at < COOKIE_CACHE_MS) return cached
+
   const cookies = await sess.cookies.get({ url: "https://music.youtube.com" })
+  const header = cookies.map((c) => `${c.name}=${c.value}`).join("; ")
+  let signing: string | null = null
   for (const name of SIGNING_COOKIES) {
     const hit = cookies.find((c) => c.name === name)
-    if (hit) return hit.value
+    if (hit) {
+      signing = hit.value
+      break
+    }
   }
-  return null
+  const bundle = { at: Date.now(), header, signing }
+  cookieCaches.set(sess, bundle)
+  return bundle
+}
+
+/** Invalidate after sign-in, sign-out, or any cookie mutation. */
+export function clearCookieCache(sess = ytSession()): void {
+  cookieCaches.delete(sess)
 }
 
 export async function hasSession(sess = ytSession()): Promise<boolean> {

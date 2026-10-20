@@ -1,6 +1,7 @@
 import type {
   AppSettings,
   AuthState,
+  BrowseChunk,
   BrowsePage,
   HistoryEvent,
   LyricsProviderInfo,
@@ -19,6 +20,7 @@ export type MuzeecApi = {
   login: () => Promise<Result<AuthState>>
   logout: () => Promise<Result<AuthState>>
   browse: (input: { browseId: string }) => Promise<Result<BrowsePage>>
+  browseMore: (input: { browseId: string; cursor: string }) => Promise<Result<BrowseChunk>>
   search: (input: { query: string }) => Promise<Result<BrowsePage>>
   radio: (input: { videoId: string }) => Promise<Result<Track[]>>
   player: (input: { videoId: string }) => Promise<Result<PlayerDecision>>

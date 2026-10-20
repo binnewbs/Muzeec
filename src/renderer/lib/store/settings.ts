@@ -1,6 +1,7 @@
 import { create } from "zustand"
 import type { AppSettings } from "@shared/types"
 import { api, unwrap } from "@/lib/ipc"
+import { clearQueryCache } from "@/lib/query"
 
 const DEFAULTS: AppSettings = {
   volume: 0.8,
@@ -40,6 +41,8 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     const next = { ...get().settings, ...patch }
     set({ settings: next })
     if (patch.theme) applyTheme(patch.theme)
+    // Free memory immediately when low-memory mode is switched on.
+    if (patch.lowMemory !== undefined) clearQueryCache()
     await unwrap(api.setSettings(patch)).catch(() => undefined)
   },
 }))

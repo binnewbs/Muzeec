@@ -77,15 +77,26 @@ export async function innertube<T = any>(
         method: "POST",
         headers,
         body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15_000),
       })
-      if (res.status >= 500) throw new Error(`InnerTube ${endpoint} ${res.status}`)
+      // Retry transient server/rate-limit failures; fail fast on auth or bad requests.
+      if (res.status >= 500 || res.status === 429) throw new RetryableError(`InnerTube ${endpoint} ${res.status}`)
       if (!res.ok) throw new Error(`InnerTube ${endpoint} ${res.status}`)
       const json = (await res.json()) as T & { error?: { message?: string } }
       if (json && json.error?.message) throw new Error(json.error.message)
       return json
     } catch (error) {
       lastError = error
+      if (!isRetryable(error)) throw error
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
+class RetryableError extends Error {}
+
+function isRetryable(error: unknown): boolean {
+  if (error instanceof RetryableError) return true
+  // fetch() network failures and timeout aborts are worth one more attempt.
+  return error instanceof TypeError || (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
 }

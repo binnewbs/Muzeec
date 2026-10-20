@@ -2,10 +2,11 @@ import { app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import type { AuthState, AuthUser } from "../../shared/types.ts"
-import { CHROME_UA, cookieHeader, hasSession, signingCookie, ytSession } from "./session.ts"
+import { CHROME_UA, clearCookieCache, cookieHeader, hasSession, signingCookie, ytSession } from "./session.ts"
 import { sapisidHash } from "./sapisid.ts"
 
 const file = () => path.join(app.getPath("userData"), "auth.json")
+const clientFile = () => path.join(app.getPath("userData"), "client-info.json")
 const SHELL_CACHE_MS = 6 * 60 * 60 * 1000
 const PROFILE_ORIGIN = "https://music.youtube.com"
 
@@ -42,8 +43,10 @@ export function clearScope(): void {
   loaded = true
   profileTried = false
   fs.rmSync(file(), { force: true })
+  fs.rmSync(clientFile(), { force: true })
   clientInfo = null
   shellFetchedAt = 0
+  clearCookieCache()
 }
 
 export async function authState(): Promise<AuthState> {
@@ -74,7 +77,8 @@ export async function getClientInfo(): Promise<{
   visitorData: string
   signatureTimestamp: number
 }> {
-  if (clientInfo && Date.now() - shellFetchedAt < SHELL_CACHE_MS) return clientInfo
+  const persisted = loadPersistedClientInfo()
+  if (persisted) return persisted
   const cookie = await cookieHeader()
   const res = await fetch("https://music.youtube.com/", {
     headers: {
@@ -100,10 +104,51 @@ export async function getClientInfo(): Promise<{
   }
   const visitorData = shellVisitor ?? getScope()?.visitorData ?? (await anonymousVisitorData())
   if (!clientVersion) throw new Error("Could not read live YouTube Music client version")
-  console.info("[auth] client", clientVersion, "sts", sts, playerJs ? "js" : "no-js")
   clientInfo = { clientVersion, visitorData, signatureTimestamp: sts ? Number(sts) : 20000 }
   shellFetchedAt = Date.now()
+  persistClientInfo(clientInfo, shellFetchedAt)
   return clientInfo
+}
+
+/** Reuse the last known shell config across launches; avoids a homepage fetch at startup. */
+function loadPersistedClientInfo(): typeof clientInfo {
+  if (clientInfo && Date.now() - shellFetchedAt < SHELL_CACHE_MS) return clientInfo
+  try {
+    const saved = JSON.parse(fs.readFileSync(clientFile(), "utf8")) as Record<string, unknown>
+    const fetchedAt = Number(saved.fetchedAt)
+    const signatureTimestamp = Number(saved.signatureTimestamp)
+    if (
+      typeof saved.clientVersion === "string" &&
+      typeof saved.visitorData === "string" &&
+      Number.isFinite(signatureTimestamp) &&
+      Number.isFinite(fetchedAt) &&
+      Date.now() - fetchedAt < SHELL_CACHE_MS
+    ) {
+      clientInfo = {
+        clientVersion: saved.clientVersion,
+        // A signed-in session must keep using its own visitor id, not the cached anonymous one.
+        visitorData: getScope()?.visitorData ?? saved.visitorData,
+        signatureTimestamp,
+      }
+      shellFetchedAt = fetchedAt
+      return clientInfo
+    }
+  } catch {
+    // No usable persisted shell config.
+  }
+  return null
+}
+
+function persistClientInfo(
+  info: { clientVersion: string; visitorData: string; signatureTimestamp: number },
+  fetchedAt: number,
+): void {
+  try {
+    fs.mkdirSync(path.dirname(clientFile()), { recursive: true })
+    fs.writeFileSync(clientFile(), JSON.stringify({ ...info, fetchedAt }))
+  } catch {
+    // A missing cache only costs one extra homepage fetch on the next launch.
+  }
 }
 
 async function anonymousVisitorData(): Promise<string> {
@@ -140,6 +185,7 @@ export async function captureSession(config: CapturedConfig): Promise<AuthUser> 
     avatar: profile.avatar,
   }
   saveScope(user)
+  clearCookieCache()
   return user
 }
 
@@ -229,6 +275,7 @@ function textOf(node: any): string | null {
 
 export async function logout(): Promise<void> {
   const yt = ytSession()
+  clearCookieCache(yt)
   await yt.clearStorageData({
     storages: ["cookies", "localstorage", "indexdb", "cachestorage", "serviceworkers"],
   })

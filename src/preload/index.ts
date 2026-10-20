@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron"
 import type {
   AppSettings,
   AuthState,
+  BrowseChunk,
   BrowsePage,
   HistoryEvent,
   LyricsProviderInfo,
@@ -28,6 +29,7 @@ export type MuzeecApi = {
   login: () => Promise<Result<AuthState>>
   logout: () => Promise<Result<AuthState>>
   browse: (input: { browseId: string }) => Promise<Result<BrowsePage>>
+  browseMore: (input: { browseId: string; cursor: string }) => Promise<Result<BrowseChunk>>
   search: (input: { query: string }) => Promise<Result<BrowsePage>>
   radio: (input: { videoId: string }) => Promise<Result<Track[]>>
   player: (input: { videoId: string }) => Promise<Result<PlayerDecision>>
@@ -57,6 +59,7 @@ const api: MuzeecApi = {
   login: () => call("yt:login"),
   logout: () => call("yt:logout"),
   browse: (input) => call("yt:browse", input),
+  browseMore: (input) => call("yt:browseMore", input),
   search: (input) => call("yt:search", input),
   radio: (input) => call("yt:radio", input),
   player: (input) => call("yt:player", input),

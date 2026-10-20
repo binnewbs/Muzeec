@@ -6,6 +6,7 @@ import { registerIpc } from "./ipc.ts"
 import { createMainWindow } from "./window.ts"
 import { createTray, destroyTray } from "./tray.ts"
 import { flushHistory } from "./youtube/history.ts"
+import { flushSettings } from "./storage/settings.ts"
 
 app.commandLine.appendSwitch("disable-features", "Translate,MediaRouter,OptimizationHints")
 app.commandLine.appendSwitch("disable-component-update")
@@ -56,6 +57,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("before-quit", () => {
     flushHistory()
+    flushSettings()
     destroyTray()
   })
 }

@@ -1,31 +1,35 @@
 import vm from "node:vm"
-import { Platform, Player } from "youtubei.js"
+import type { Player } from "youtubei.js"
 
 let player: Player | null = null
 let loading: Promise<Player> | null = null
 
 /**
  * YouTube's player script is remote code. It runs inside a bare vm context with
- * no require/process, never in the UI renderer (PLAN §5). Move this to a
- * utilityProcess when the direct-URL path is no longer the only consumer.
+ * no require/process, never in the UI renderer.
+ *
+ * The package is imported lazily: VISIONOS direct-URL playback never needs it,
+ * so most launches skip loading ~19 MB of javascript into the main process.
  */
-Platform.shim.eval = async (data: { output: string }) => {
-  const sandbox = {
-    atob: (value: string) => Buffer.from(value, "base64").toString("binary"),
-    btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
-    TextEncoder,
-    TextDecoder,
-    URL,
-    URLSearchParams,
-    console,
-    setTimeout,
-    clearTimeout,
-  }
-  return vm.runInContext(`(function(){\n${data.output}\n})()`, vm.createContext(sandbox), { timeout: 10_000 })
-}
-
 async function getPlayer(): Promise<Player> {
-  loading ??= Player.create(undefined)
+  loading ??= (async () => {
+    const { Platform, Player: PlayerClass } = await import("youtubei.js")
+    Platform.shim.eval = async (data: { output: string }) => {
+      const sandbox = {
+        atob: (value: string) => Buffer.from(value, "base64").toString("binary"),
+        btoa: (value: string) => Buffer.from(value, "binary").toString("base64"),
+        TextEncoder,
+        TextDecoder,
+        URL,
+        URLSearchParams,
+        console,
+        setTimeout,
+        clearTimeout,
+      }
+      return vm.runInContext(`(function(){\n${data.output}\n})()`, vm.createContext(sandbox), { timeout: 10_000 })
+    }
+    return PlayerClass.create(undefined)
+  })()
   player = await loading
   return player
 }

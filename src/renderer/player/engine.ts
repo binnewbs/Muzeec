@@ -78,6 +78,13 @@ class AudioEngine {
     this.emit()
   }
 
+  /** Sets the reported position without touching the media element (used by lazy restore). */
+  setPosition(seconds: number): void {
+    if (!Number.isFinite(seconds)) return
+    this.position = seconds
+    this.emit()
+  }
+
   setVolume(volume: number, muted = false): void {
     this.audio.volume = Math.min(1, Math.max(0, volume))
     this.audio.muted = muted
@@ -124,7 +131,7 @@ export function setMediaSession(track: Track | null, playing: boolean): void {
     title: track.title,
     artist: track.subtitle,
     album: track.album?.name ?? "Muzeec",
-    artwork: track.thumbnail ? [{ src: track.thumbnail, sizes: "512x512", type: "image/jpeg" }] : [],
+    artwork: track.thumbnail ? [{ src: track.thumbnail, sizes: "320x320", type: "image/jpeg" }] : [],
   })
   navigator.mediaSession.playbackState = playing ? "playing" : "paused"
 }

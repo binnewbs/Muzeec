@@ -12,6 +12,7 @@ import { engine } from "@/player/engine"
 
 export function LyricsPanel() {
   const current = usePlayer((state) => state.current)
+  const playing = usePlayer((state) => state.status === "playing")
   const settings = useSettings((state) => state.settings)
   const update = useSettings((state) => state.update)
   const [result, setResult] = useState<LyricsResult | null>(null)
@@ -21,15 +22,29 @@ export function LyricsPanel() {
   const [position, setPosition] = useState(() => engine.currentTime * 1000)
   const rows = useRef<Array<HTMLDivElement | null>>([])
   const sourcesKey = settings.lyricsSources.join(",")
+  const wordSynced = Boolean(result?.wordSynced)
 
+  // Line highlighting only needs the engine's 4 Hz ticker, not a render loop.
   useEffect(() => {
+    const sync = () => setPosition(engine.currentTime * 1000)
+    sync()
+    return engine.subscribe(sync)
+  }, [])
+
+  // Word-level sweep needs frame precision, but only while a word-synced song plays.
+  useEffect(() => {
+    if (!playing || !wordSynced) return
     let frame = 0
     const tick = () => {
       setPosition(engine.currentTime * 1000)
       frame = requestAnimationFrame(tick)
     }
-    tick()
+    frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
+  }, [playing, wordSynced])
+
+  const registerRow = useCallback((index: number, node: HTMLDivElement | null) => {
+    rows.current[index] = node
   }, [])
 
   useEffect(() => {
@@ -150,15 +165,16 @@ export function LyricsPanel() {
           ) : result ? (
             <div className="flex flex-col gap-4 pb-[35vh]">
               {result.lines.map((line, index) => (
-                <div key={`${line.timeMs}-${index}`} ref={(node) => { rows.current[index] = node }}>
-                  <LyricRow
-                    line={line}
-                    active={index === activeIndex}
-                    plain={!result.synced}
-                    position={index === activeIndex ? position + offset : 0}
-                    onSeek={seekTo}
-                  />
-                </div>
+                <LyricLineRow
+                  key={`${line.timeMs}-${index}`}
+                  index={index}
+                  line={line}
+                  active={index === activeIndex}
+                  plain={!result.synced}
+                  position={index === activeIndex ? position + offset : 0}
+                  onSeek={seekTo}
+                  registerRow={registerRow}
+                />
               ))}
             </div>
           ) : (
@@ -174,6 +190,32 @@ export function LyricsPanel() {
     </div>
   )
 }
+
+const LyricLineRow = memo(function LyricLineRow({
+  index,
+  line,
+  active,
+  plain,
+  position,
+  onSeek,
+  registerRow,
+}: {
+  index: number
+  line: LyricLine
+  active: boolean
+  plain: boolean
+  position: number
+  onSeek: (line: LyricLine) => void
+  registerRow: (index: number, node: HTMLDivElement | null) => void
+}) {
+  // Stable ref callback: keeps parent re-renders from detaching/reattaching every row.
+  const setRef = useCallback((node: HTMLDivElement | null) => registerRow(index, node), [registerRow, index])
+  return (
+    <div ref={setRef}>
+      <LyricRow line={line} active={active} plain={plain} position={position} onSeek={onSeek} />
+    </div>
+  )
+})
 
 const LyricRow = memo(function LyricRow({
   line,

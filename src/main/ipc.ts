@@ -1,15 +1,15 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
-import type { AppSettings, PlayerState, Rating, Track } from "../shared/types.ts"
+import type { AppSettings, BrowseChunk, BrowsePage, PlayerState, Rating, Track } from "../shared/types.ts"
 import { normalizeSearchHistory } from "../shared/search-history.ts"
 import { authState, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
 import { innertube } from "./youtube/innertube.ts"
-import { appendBrowseItems, parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
+import { parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
 import { clearPlayerCaches, resolvePlayer, resolveMusicTrack, PlayerFailure } from "./youtube/player.ts"
 import { trackHistory, flushHistory } from "./youtube/history.ts"
 import { rate, addToPlaylist, createPlaylist, deletePlaylist, subscribe } from "./youtube/sync.ts"
-import { getSettings, updateSettings } from "./storage/settings.ts"
-import { cacheClear, cacheGet, cacheSet } from "./storage/cache.ts"
+import { flushSettings, getSettings, updateSettings } from "./storage/settings.ts"
+import { cacheClear, cacheGet, cacheSet, cacheTrim } from "./storage/cache.ts"
 import { lyricsProviderInfo, lookupLyrics } from "./lyrics/engine.ts"
 import { updateTray } from "./tray.ts"
 
@@ -28,7 +28,51 @@ function pagedCollection(browseId: string): boolean {
   return browseId.startsWith("VL") || browseId.startsWith("MPRE")
 }
 
-const MAX_CONTINUATIONS = 100
+function pageCost(page: BrowsePage): number {
+  return page.shelves.reduce((total, shelf) => total + shelf.items.length, 0)
+}
+
+const COLLECTION_TTL_MS = 20 * 60 * 1000
+const BROWSE_TTL_MS = 2 * 60 * 1000
+const CHUNK_TTL_MS = 10 * 60 * 1000
+
+const browseInflight = new Map<string, Promise<BrowsePage>>()
+const chunkInflight = new Map<string, Promise<BrowseChunk>>()
+
+async function loadBrowsePage(id: string): Promise<BrowsePage> {
+  const json = await innertube("browse", { browseId: id })
+  const feed = parseBrowseFeed(json, id)
+  const paged = pagedCollection(id)
+  const page: BrowsePage = {
+    ...feed.page,
+    continuation: paged ? feed.continuation : null,
+    trackListIndex: feed.trackListIndex,
+  }
+  if (page.shelves.length === 0) throw new Error("This page returned no playable content")
+  return cacheSet(`browse:${id}`, page, paged ? COLLECTION_TTL_MS : BROWSE_TTL_MS, pageCost(page))
+}
+
+/** Next slice of a paged album/playlist. The renderer appends these as the user scrolls. */
+async function loadBrowseChunk(id: string, token: string): Promise<BrowseChunk> {
+  const key = `browseMore:${token}`
+  const cached = cacheGet<BrowseChunk>(key)
+  if (cached) return cached
+
+  const existing = chunkInflight.get(key)
+  if (existing) return existing
+
+  const promise = (async () => {
+    const json = await innertube("browse", { continuation: token })
+    const feed = parseBrowseFeed(json, id)
+    const items = feed.page.shelves.flatMap((shelf) => shelf.items)
+    if (!items.length && !feed.continuation) throw new Error("No more songs")
+    const chunk: BrowseChunk = { items, continuation: feed.continuation }
+    return cacheSet(key, chunk, CHUNK_TTL_MS, items.length)
+  })().finally(() => chunkInflight.delete(key))
+
+  chunkInflight.set(key, promise)
+  return promise
+}
 
 export function registerIpc(): void {
   ipcMain.handle("sys:windowMinimize", (event) => {
@@ -57,6 +101,7 @@ export function registerIpc(): void {
     await logout()
     clearPlayerCaches()
     flushHistory()
+    flushSettings()
     cacheClear()
     return authState()
   })
@@ -65,23 +110,22 @@ export function registerIpc(): void {
     const { browseId } = record(input)
     const id = text(browseId, "browseId", 200)
     const key = `browse:${id}`
-    const cached = cacheGet(key)
+    const cached = cacheGet<BrowsePage>(key)
     if (cached) return cached
-    const json = await innertube("browse", { browseId: id })
-    const feed = parseBrowseFeed(json, id)
-    const page = feed.page
-    if (pagedCollection(id)) {
-      const seen = new Set<string>()
-      let continuation = feed.continuation
-      while (continuation && !seen.has(continuation) && seen.size < MAX_CONTINUATIONS) {
-        seen.add(continuation)
-        const chunk = parseBrowseFeed(await innertube("browse", { continuation }), id)
-        appendBrowseItems(page, chunk.page.shelves.flatMap((shelf) => shelf.items), feed.trackListIndex)
-        continuation = chunk.continuation
-      }
-    }
-    if (page.shelves.length === 0) throw new Error("This page returned no playable content")
-    return cacheSet(key, page, 2 * 60 * 1000)
+
+    const existing = browseInflight.get(key)
+    if (existing) return existing
+
+    const promise = loadBrowsePage(id).finally(() => browseInflight.delete(key))
+    browseInflight.set(key, promise)
+    return promise
+  })
+
+  ipcMain.handle("yt:browseMore", async (_event, input) => {
+    const { browseId, cursor } = record(input)
+    const id = text(browseId, "browseId", 200)
+    const token = text(cursor, "cursor", 16_384)
+    return loadBrowseChunk(id, token)
   })
 
   ipcMain.handle("yt:search", async (_event, input) => {
@@ -108,7 +152,7 @@ export function registerIpc(): void {
       title: `Results for “${q}”`,
       shelves: pages.flatMap((result) => result.shelves),
     }
-    return cacheSet(key, page, 5 * 60 * 1000)
+    return cacheSet(key, page, 5 * 60 * 1000, pageCost(page))
   })
 
   ipcMain.handle("yt:radio", async (_event, input) => {
@@ -121,7 +165,7 @@ export function registerIpc(): void {
     const json = await innertube("next", { videoId: musicId, playlistId: `RDAMVM${musicId}` })
     const tracks = parseQueueTracks(json)
     if (!tracks.length) throw new Error("No autoplay songs found")
-    return cacheSet(key, tracks, 10 * 60 * 1000)
+    return cacheSet(key, tracks, 10 * 60 * 1000, tracks.length)
   })
 
   ipcMain.handle("yt:musicTrack", async (_event, input) => {
@@ -149,7 +193,11 @@ export function registerIpc(): void {
     const id = text(videoId, "videoId", 32)
     if (rating !== "like" && rating !== "dislike" && rating !== "none") throw new Error("Invalid rating")
     await rate(id, rating as Rating)
-    cacheClear("browse:")
+    // Only the library and Liked Music page change. Wiping every paginated
+    // playlist cache here would force a full re-walk on the next visit.
+    cacheClear("browse:FEmusic_library")
+    cacheClear("browse:VLLM")
+    cacheClear("browse:LM")
   })
 
   ipcMain.handle("yt:playlistCreate", async (_event, input) => {
@@ -281,6 +329,7 @@ export function registerIpc(): void {
       next.lastTrack = input.lastTrack as Track
     }
     if (lyricsChanged) cacheClear("lyrics")
+    if (next.lowMemory) cacheTrim()
     return updateSettings(next)
   })
 

@@ -48,6 +48,15 @@ export type BrowsePage = {
   title: string
   shelves: Shelf[]
   header?: PageHeader | null
+  /** Opaque token for the next chunk when the page is a paged collection. */
+  continuation?: string | null
+  /** Index of the main track shelf that continuation chunks belong to. */
+  trackListIndex?: number | null
+}
+
+export type BrowseChunk = {
+  items: MediaItem[]
+  continuation: string | null
 }
 
 export type Track = MediaItem & { kind: "track"; videoId: string }

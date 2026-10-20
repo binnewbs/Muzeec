@@ -38,26 +38,81 @@ const CLIENTS: Client[] = [
 
 const EXCLUDE_MS = 10 * 60 * 1000
 const VERDICT_MS = 10 * 60 * 1000
+const DECISION_MS = 20 * 60 * 1000
+const MAX_VERDICTS = 200
+const MAX_EXCLUSIONS = 400
+const MAX_DECISIONS = 40
 const exclusions = new Map<string, number>()
 const inflight = new Map<string, Promise<PlayerDecision>>()
+const decisions = new Map<string, { decision: PlayerDecision; expires: number }>()
 export const verdicts = new Map<string, { reason: string; expires: number }>()
 
 export function clearPlayerCaches(): void {
   exclusions.clear()
   verdicts.clear()
+  decisions.clear()
   inflight.clear()
 }
 
 export async function resolvePlayer(videoId: string, signedIn: boolean): Promise<PlayerDecision> {
-  const cached = verdicts.get(videoId)
-  if (cached && cached.expires > Date.now()) throw new PlayerFailure(cached.reason, true)
+  const cachedVerdict = verdicts.get(videoId)
+  if (cachedVerdict && cachedVerdict.expires > Date.now()) throw new PlayerFailure(cachedVerdict.reason, true)
 
-  const existing = inflight.get(videoId)
+  const key = decisionKey(videoId, signedIn)
+  const resolved = decisions.get(key)
+  if (resolved && resolved.expires > Date.now() && resolved.decision.expiresAt > Date.now() + 60_000) {
+    return resolved.decision
+  }
+
+  const existing = inflight.get(key)
   if (existing) return existing
 
-  const promise = resolveWalk(videoId, signedIn).finally(() => inflight.delete(videoId))
-  inflight.set(videoId, promise)
+  const promise = resolveWalk(videoId, signedIn)
+    .then((decision) => {
+      rememberDecision(key, decision)
+      return decision
+    })
+    .finally(() => inflight.delete(key))
+  inflight.set(key, promise)
   return promise
+}
+
+function decisionKey(videoId: string, signedIn: boolean): string {
+  return `${videoId}:${signedIn ? 1 : 0}:${getSettings().quality}`
+}
+
+function rememberDecision(key: string, decision: PlayerDecision): void {
+  if (decisions.size >= MAX_DECISIONS) pruneDecisions()
+  decisions.set(key, {
+    decision,
+    expires: Math.max(Date.now() + 60_000, Math.min(Date.now() + DECISION_MS, decision.expiresAt - 60_000)),
+  })
+}
+
+function pruneDecisions(): void {
+  const now = Date.now()
+  for (const [key, entry] of decisions) {
+    if (entry.expires <= now || entry.decision.expiresAt <= now + 60_000) decisions.delete(key)
+  }
+  while (decisions.size >= MAX_DECISIONS) decisions.delete(decisions.keys().next().value!)
+}
+
+function rememberVerdict(videoId: string, reason: string): void {
+  if (verdicts.size >= MAX_VERDICTS) {
+    const now = Date.now()
+    for (const [key, entry] of verdicts) if (entry.expires <= now) verdicts.delete(key)
+    while (verdicts.size >= MAX_VERDICTS) verdicts.delete(verdicts.keys().next().value!)
+  }
+  verdicts.set(videoId, { reason, expires: Date.now() + VERDICT_MS })
+}
+
+function excludeClient(key: string): void {
+  if (exclusions.size >= MAX_EXCLUSIONS) {
+    const now = Date.now()
+    for (const [entry, until] of exclusions) if (until <= now) exclusions.delete(entry)
+    while (exclusions.size >= MAX_EXCLUSIONS) exclusions.delete(exclusions.keys().next().value!)
+  }
+  exclusions.set(key, Date.now() + EXCLUDE_MS)
 }
 
 type Candidate = { url: string; mimeType: string; bitrate: number; codec: string; client: string }
@@ -91,20 +146,21 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
         const reason = readableReason(status?.reason ?? status?.status ?? "Refused")
         reasons.push(`${client.label}: ${reason}`)
         if (isPermanent(reason)) {
-          verdicts.set(videoId, { reason, expires: Date.now() + VERDICT_MS })
+          rememberVerdict(videoId, reason)
           throw new PlayerFailure(reason, true)
         }
-        exclusions.set(key, Date.now() + EXCLUDE_MS)
+        excludeClient(key)
         continue
       }
 
       const formats: any[] = response?.streamingData?.adaptiveFormats ?? []
+      const preferredItag = getSettings().quality === "normal" ? 140 : 251
       const audio = formats
         .filter((f) => String(f.mimeType ?? "").startsWith("audio/"))
-        .sort((a, b) => score(b) - score(a))
+        .sort((a, b) => score(b, preferredItag) - score(a, preferredItag))
       if (!audio.length) {
         reasons.push(`${client.label}: no audio formats`)
-        exclusions.set(key, Date.now() + EXCLUDE_MS)
+        excludeClient(key)
         continue
       }
 
@@ -119,7 +175,7 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
         const probeResult = await probe(candidate.url)
         if (!probeResult.ok) {
           reasons.push(`${client.label}: ${probeResult.reason}`)
-          exclusions.set(key, Date.now() + EXCLUDE_MS)
+          excludeClient(key)
           continue
         }
         return {
@@ -143,9 +199,8 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
   throw new PlayerFailure(reason, false)
 }
 
-function score(format: any): number {
+function score(format: any, preferredItag: number): number {
   const itag = Number(format.itag)
-  const preferredItag = getSettings().quality === "normal" ? 140 : 251
   const preferred = itag === preferredItag ? 300_000 : 0
   return preferred + Number(format.bitrate ?? 0)
 }

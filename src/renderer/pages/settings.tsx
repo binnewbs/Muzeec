@@ -132,7 +132,7 @@ export default function SettingsPage() {
                 <Field orientation="horizontal">
                   <FieldContent>
                     <FieldTitle>Low memory mode</FieldTitle>
-                    <FieldDescription>Smaller audio buffer for low-RAM machines.</FieldDescription>
+                    <FieldDescription>Smaller in-memory caches for low-RAM machines.</FieldDescription>
                   </FieldContent>
                   <Switch
                     checked={settings.lowMemory}

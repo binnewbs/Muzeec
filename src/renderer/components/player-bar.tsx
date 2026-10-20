@@ -21,6 +21,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTr
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "cn"
 import { formatTime } from "@/lib/media"
+import { useIncrementalList } from "@/lib/incremental"
 import { ArtistLinks } from "@/components/artist-links"
 import { LyricsPanel } from "@/components/lyrics-panel"
 import { usePlayer } from "@/lib/store/player"
@@ -58,7 +59,7 @@ export function PlayerBar() {
   const VolumeIcon = muted || volume === 0 ? VolumeXIcon : volume < 0.5 ? Volume1Icon : Volume2Icon
 
   return (
-    <footer className="flex shrink-0 flex-col border-t bg-background/95 backdrop-blur">
+    <footer className="flex shrink-0 flex-col border-t bg-background">
       <div className="grid grid-cols-[1fr_auto] items-center gap-4 px-4 py-2 md:grid-cols-[minmax(0,1fr)_minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 items-center gap-3">
           {current?.thumbnail ? (
@@ -216,6 +217,7 @@ function QueueList() {
   const current = usePlayer((state) => state.current)
   const [dragging, setDragging] = useState<number | null>(null)
   const [over, setOver] = useState<number | null>(null)
+  const queueWindow = useIncrementalList(tracks.length)
 
   const seed = tracks.at(-1) ?? current
   const seedId = seed?.videoId ?? null
@@ -230,6 +232,7 @@ function QueueList() {
       : autoplay.filter((track) => track.videoId !== seedId)
   const loading = autoplayLoading && autoplaySeed === seedId
   const afterQueue = tracks.length > 0
+  const autoplayWindow = useIncrementalList(upcoming.length)
 
   return (
     <ScrollArea className="h-[calc(100vh-8rem)] px-3">
@@ -237,7 +240,7 @@ function QueueList() {
         <section className="flex flex-col gap-1">
           <h3 className="px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">Up next</h3>
           {tracks.length ? (
-            tracks.map((track, i) => (
+            tracks.slice(0, queueWindow.visibleCount).map((track, i) => (
               <div
                 key={`${track.videoId}-${i}`}
                 draggable
@@ -300,6 +303,13 @@ function QueueList() {
           ) : (
             <p className="px-3 text-sm text-muted-foreground">No songs added. Autoplay continues when this song ends.</p>
           )}
+          {queueWindow.hasMore ? (
+            <div ref={queueWindow.sentinelRef} className="flex justify-center py-1">
+              <Button variant="ghost" size="sm" onClick={queueWindow.showMore}>
+                Show more ({tracks.length - queueWindow.visibleCount})
+              </Button>
+            </div>
+          ) : null}
         </section>
 
         <section className="flex flex-col gap-1">
@@ -309,7 +319,7 @@ function QueueList() {
           {loading ? (
             <p className="px-3 text-sm text-muted-foreground">Loading similar songs…</p>
           ) : upcoming.length ? (
-            upcoming.map((track, i) => (
+            upcoming.slice(0, autoplayWindow.visibleCount).map((track, i) => (
               <div key={`${track.videoId}-${i}`} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-muted">
                 <span className="w-4 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
                 <button
@@ -327,6 +337,13 @@ function QueueList() {
           ) : (
             <p className="px-3 text-sm text-muted-foreground">Autoplay preview unavailable.</p>
           )}
+          {autoplayWindow.hasMore ? (
+            <div ref={autoplayWindow.sentinelRef} className="flex justify-center py-1">
+              <Button variant="ghost" size="sm" onClick={autoplayWindow.showMore}>
+                Show more ({upcoming.length - autoplayWindow.visibleCount})
+              </Button>
+            </div>
+          ) : null}
         </section>
       </div>
     </ScrollArea>

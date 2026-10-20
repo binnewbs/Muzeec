@@ -36,6 +36,17 @@ const TRACK_LIST_ORDER = [
 
 type ShelfHit = { shelf: Shelf; renderer: string; token: string | null }
 
+/** Decoded-image cost matters more than bytes: list rows are 40 px, cards 160 px. */
+const ITEM_THUMBNAIL_SIZE = 320
+const HEADER_THUMBNAIL_SIZE = 544
+
+export function sizedThumbnail(url: string | null | undefined, size: number): string | null {
+  if (!url) return null
+  const sized = url.replace(/=(?:w\d+-h\d+|w\d+|h\d+)/i, `=w${size}-h${size}`)
+  if (sized !== url) return sized
+  return url.replace(/=s\d+(-[a-z0-9-]+)?$/i, (_match, suffix = "") => `=s${size}${suffix}`)
+}
+
 export type BrowseFeed = {
   page: BrowsePage
   continuation: string | null
@@ -121,12 +132,26 @@ function pickTrackList(hits: ShelfHit[]): number | null {
 }
 
 function continuationOf(renderer: any): string | null {
-  return (
-    findKey(renderer, "continuationItemRenderer")?.continuationEndpoint?.continuationCommand?.token ??
-    findKey(renderer, "continuationCommand")?.token ??
-    findKey(renderer, "nextContinuationData")?.continuation ??
-    null
-  )
+  return findContinuationToken(renderer)
+}
+
+/** Single early-exit traversal instead of three full-subtree `findKey` walks per shelf. */
+function findContinuationToken(node: any): string | null {
+  if (!node || typeof node !== "object") return null
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const token = findContinuationToken(child)
+      if (token) return token
+    }
+    return null
+  }
+  const token = node.continuationCommand?.token ?? node.nextContinuationData?.continuation
+  if (typeof token === "string") return token
+  for (const child of Object.values(node)) {
+    const found = findContinuationToken(child)
+    if (found) return found
+  }
+  return null
 }
 
 /** Radio/autoplay queue from the `next` endpoint (`RDAMVM<videoId>`). */
@@ -204,10 +229,11 @@ function pageHeader(json: any): PageHeader | null {
 }
 
 function thumbnailOf(renderer: any): string | null {
-  return (
+  return sizedThumbnail(
     renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
-    renderer.thumbnail?.thumbnails?.at(-1)?.url ??
-    null
+      renderer.thumbnail?.thumbnails?.at(-1)?.url ??
+      null,
+    HEADER_THUMBNAIL_SIZE,
   )
 }
 
@@ -286,11 +312,13 @@ function toItem(renderer: any): MediaItem | null {
     textOf(renderer.lengthText) ??
     null
   const duration = parseDuration(durationText)
-  const thumbnail =
+  const thumbnail = sizedThumbnail(
     renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
-    renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
-    renderer.thumbnail?.thumbnails?.at(-1)?.url ??
-    null
+      renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
+      renderer.thumbnail?.thumbnails?.at(-1)?.url ??
+      null,
+    ITEM_THUMBNAIL_SIZE,
+  )
   const watchEndpoint =
     renderer.navigationEndpoint?.watchEndpoint ??
     findKey(renderer, "watchEndpoint")

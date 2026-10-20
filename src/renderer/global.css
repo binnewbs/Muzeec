@@ -136,3 +136,9 @@
 .app-no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* Skip layout/paint for offscreen rows in long lists. */
+.list-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 56px;
+}

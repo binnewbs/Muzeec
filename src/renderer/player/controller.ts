@@ -18,6 +18,8 @@ let unshuffledCycle: Track[] | null = null
 let history: Track[] = []
 let lastProgressPing = 0
 let historyVideoId: string | null = null
+/** Track restored from the last session; its stream resolves only when the user hits play. */
+let pendingRestore: { track: Track; position: number } | null = null
 
 function finishHistory(position: number, duration: number): void {
   if (!historyVideoId) return
@@ -90,7 +92,8 @@ export async function playTrack(track: Track): Promise<void> {
   await startTrack(musicTrack)
 }
 
-async function startTrack(track: Track, rememberCurrent = true): Promise<void> {
+async function startTrack(track: Track, rememberCurrent = true, startAt = 0): Promise<void> {
+  pendingRestore = null
   const token = ++requestToken
   if (rememberCurrent) remember(track)
   if (historyVideoId && historyVideoId !== track.videoId) finishHistory(engine.currentTime, engine.duration)
@@ -102,13 +105,15 @@ async function startTrack(track: Track, rememberCurrent = true): Promise<void> {
     if (token !== requestToken) return
     await engine.load(decision)
     if (token !== requestToken) return
+    const maxDuration = decision.duration || track.duration || 0
+    if (startAt > 0 && maxDuration > 0) engine.seek(Math.min(startAt, maxDuration))
     await engine.play()
     usePlayer.getState().set({ status: "playing", duration: engine.duration || track.duration || 0 })
     setMediaSession(track, true)
     lastProgressPing = Date.now()
     historyVideoId = track.videoId
-    void api.history({ videoId: track.videoId, event: "start", position: 0, duration: engine.duration })
-    void api.setSettings({ lastTrack: track, lastPosition: 0 })
+    void api.history({ videoId: track.videoId, event: "start", position: startAt, duration: engine.duration })
+    void api.setSettings({ lastTrack: track, lastPosition: startAt })
   } catch (error) {
     if (token !== requestToken) return
     const message = errorMessage(error)
@@ -129,6 +134,16 @@ export function togglePlay(): void {
     return
   }
   if (status === "paused") {
+    const pending = pendingRestore
+    if (pending) {
+      pendingRestore = null
+      // Resolve the stream on the first play after a cold start, at the saved position.
+      void (async () => {
+        const musicTrack = await ensureMusicTrack(pending.track)
+        await startTrack(musicTrack, false, pending.position)
+      })()
+      return
+    }
     void engine.play().then(() => {
       usePlayer.getState().set({ status: "playing" })
       setMediaSession(current, true)
@@ -220,19 +235,26 @@ export async function previewAutoplay(): Promise<void> {
 }
 
 export function previous(): void {
-  if (engine.currentTime > 5) {
-    engine.seek(0)
+  const position = pendingRestore ? pendingRestore.position : engine.currentTime
+  if (position > 5) {
+    seek(0)
     return
   }
   const previousTrack = history.pop()
   if (!previousTrack) {
-    engine.seek(0)
+    seek(0)
     return
   }
   void startTrack(previousTrack, false)
 }
 
 export function seek(seconds: number): void {
+  if (pendingRestore) {
+    pendingRestore.position = seconds
+    engine.setPosition(seconds)
+    void api.setSettings({ lastPosition: seconds })
+    return
+  }
   engine.seek(seconds)
   void api.setSettings({ lastPosition: seconds })
 }
@@ -351,7 +373,8 @@ export function initPlayer(): void {
   engine.subscribe(() => {
     const { current } = usePlayer.getState()
     if (!current) return
-    if (Date.now() - lastPlaybackPersist < 5000) return
+    // Coalesce resume-position writes to one every 15 s instead of every 5 s.
+    if (Date.now() - lastPlaybackPersist < 15_000) return
     lastPlaybackPersist = Date.now()
     void api.setSettings({ lastTrack: current, lastPosition: engine.currentTime })
   })
@@ -385,7 +408,6 @@ export function initPlayer(): void {
         position: engine.currentTime,
         duration: engine.duration,
       })
-      void api.setSettings({ lastPosition: engine.currentTime })
     }
   })
 
@@ -418,48 +440,27 @@ export function initPlayer(): void {
     if (action === "previous") previous()
   })
 
-  void restoreLastPlayback()
+  restoreLastPlayback()
 }
 
-async function restoreLastPlayback(): Promise<void> {
+/**
+ * Restores the last session's track metadata without touching the network.
+ * The stream is resolved on the first play press, which keeps cold start offline-fast.
+ */
+function restoreLastPlayback(): void {
   const { settings } = useSettings.getState()
   const track = settings.lastTrack
   if (!track) return
 
-  const position = Number.isFinite(settings.lastPosition) ? settings.lastPosition : 0
-  const token = ++requestToken
-  try {
-    const musicTrack = await ensureMusicTrack(track)
-    if (token !== requestToken) return
-
-    const player = usePlayer.getState()
-    player.set({ current: musicTrack, status: "loading", error: null, liked: false, duration: musicTrack.duration ?? 0 })
-    setMediaSession(musicTrack, false)
-
-    const decision = await unwrap(api.player({ videoId: musicTrack.videoId }))
-    if (token !== requestToken) return
-    await engine.load(decision)
-    if (token !== requestToken) return
-
-    const seekTo = Math.min(position, decision.duration || musicTrack.duration || 0)
-    const waitSeekable = async () => {
-      if (engine.audio.readyState >= 2 && engine.audio.seekable.length > 0) return
-      await new Promise<void>((resolve) => {
-        const done = () => resolve()
-        engine.audio.addEventListener("loadeddata", done, { once: true })
-        engine.audio.addEventListener("canplay", done, { once: true })
-        setTimeout(done, 1000)
-      })
-    }
-    await waitSeekable()
-    engine.seek(seekTo)
-    usePlayer.getState().set({
-      status: "paused",
-      duration: engine.duration || decision.duration || musicTrack.duration || 0,
-    })
-    void api.setSettings({ lastTrack: musicTrack, lastPosition: seekTo })
-    setMediaSession(musicTrack, false)
-  } catch {
-    await api.setSettings({ lastTrack: null, lastPosition: 0 }).catch(() => undefined)
-  }
+  const position = Number.isFinite(settings.lastPosition) ? Math.max(0, settings.lastPosition) : 0
+  pendingRestore = { track, position }
+  usePlayer.getState().set({
+    current: track,
+    status: "paused",
+    error: null,
+    liked: false,
+    duration: track.duration ?? 0,
+  })
+  engine.setPosition(position)
+  setMediaSession(track, false)
 }

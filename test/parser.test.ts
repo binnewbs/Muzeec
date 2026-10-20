@@ -1,6 +1,26 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { appendBrowseItems, parseBrowseFeed, parseQueueTracks } from "../src/main/youtube/parser.ts"
+import { appendBrowseItems, parseBrowseFeed, parseQueueTracks, sizedThumbnail } from "../src/main/youtube/parser.ts"
+
+test("thumbnails are resized to the requested display size", () => {
+  assert.equal(
+    sizedThumbnail("https://lh3.googleusercontent.com/abc=w1080-h1080-l90-rj", 320),
+    "https://lh3.googleusercontent.com/abc=w320-h320-l90-rj",
+  )
+  assert.equal(
+    sizedThumbnail("https://yt3.ggpht.com/abc=s544-c-k-c0x00ffffff-no-rj", 544),
+    "https://yt3.ggpht.com/abc=s544-c-k-c0x00ffffff-no-rj",
+  )
+  assert.equal(
+    sizedThumbnail("https://yt3.ggpht.com/abc=s900", 544),
+    "https://yt3.ggpht.com/abc=s544",
+  )
+  assert.equal(sizedThumbnail(null, 320), null)
+  assert.equal(
+    sizedThumbnail("https://i.ytimg.com/vi/abc/hqdefault.jpg", 320),
+    "https://i.ytimg.com/vi/abc/hqdefault.jpg",
+  )
+})
 
 test("radio parser skips official music videos", () => {
   const json = {

@@ -42,10 +42,10 @@ export default function SearchPage({ initialQuery = "" }: { initialQuery?: strin
 
   // Live search has no submit button, so save once the query has been stable for a moment.
   useEffect(() => {
-    if (!active || !data) return
+    if (!active || !data || loading) return
     const timer = setTimeout(() => remember(debounced), 1200)
     return () => clearTimeout(timer)
-  }, [active, data, debounced, remember])
+  }, [active, data, loading, debounced, remember])
 
   const remove = (term: string) => {
     void updateSettings({ searchHistory: history.filter((entry) => entry !== term) })
