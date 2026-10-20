@@ -16,6 +16,7 @@ const DEFAULTS: AppSettings = {
   lastTrack: null,
   lastPosition: 0,
   searchHistory: [],
+  pinnedPlaylists: [],
 }
 
 /** Coalesce bursts of updates (position, volume, search history) into one write. */

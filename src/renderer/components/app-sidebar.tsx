@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Logo } from "@/components/logo"
+import { PinnedPlaylists } from "@/components/pinned-playlists"
 import { useAuth } from "@/lib/store/auth"
 import { useView, type View } from "@/lib/store/view"
 
@@ -82,6 +83,7 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        <PinnedPlaylists />
       </SidebarContent>
 
       <SidebarFooter>

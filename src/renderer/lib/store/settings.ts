@@ -16,6 +16,7 @@ const DEFAULTS: AppSettings = {
   lastTrack: null,
   lastPosition: 0,
   searchHistory: [],
+  pinnedPlaylists: [],
 }
 
 type SettingsStore = {

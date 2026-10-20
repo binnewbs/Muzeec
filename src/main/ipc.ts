@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
-import type { AppSettings, BrowseChunk, BrowsePage, PlayerState, Rating, Track } from "../shared/types.ts"
+import type { AppSettings, BrowseChunk, BrowsePage, PinnedPlaylist, PlayerState, Rating, Track } from "../shared/types.ts"
 import { normalizeSearchHistory } from "../shared/search-history.ts"
 import { authState, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
@@ -315,6 +315,21 @@ export function registerIpc(): void {
     }
     if (Array.isArray(input.searchHistory)) {
       next.searchHistory = normalizeSearchHistory(input.searchHistory)
+    }
+    if (Array.isArray(input.pinnedPlaylists)) {
+      const seen = new Set<string>()
+      const pinned: PinnedPlaylist[] = []
+      for (const entry of input.pinnedPlaylists) {
+        if (pinned.length >= 50) break
+        if (!entry || typeof entry !== "object") continue
+        const { id, title } = entry as Record<string, unknown>
+        if (typeof id !== "string" || !id.length || id.length > 200) continue
+        if (typeof title !== "string" || !title.length || title.length > 300) continue
+        if (seen.has(id)) continue
+        seen.add(id)
+        pinned.push({ id, title })
+      }
+      next.pinnedPlaylists = pinned
     }
     if (input.lastTrack === null) {
       next.lastTrack = null

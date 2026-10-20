@@ -142,6 +142,12 @@ export type LyricsRequest = {
   retry?: boolean
 }
 
+/** Playlist pinned to the sidebar; metadata is cached so the sidebar needs no network at startup. */
+export type PinnedPlaylist = {
+  id: string
+  title: string
+}
+
 export type AppSettings = {
   volume: number
   quality: "high" | "normal"
@@ -155,6 +161,7 @@ export type AppSettings = {
   lastTrack: Track | null
   lastPosition: number
   searchHistory: string[]
+  pinnedPlaylists: PinnedPlaylist[]
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
