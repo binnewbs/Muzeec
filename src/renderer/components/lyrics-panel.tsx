@@ -144,10 +144,6 @@ export function LyricsPanel() {
     [result?.synced, offset],
   )
 
-  const nudge = (delta: number) => {
-    void update({ lyricsOffsetMs: Math.max(-5000, Math.min(5000, offset + delta)) })
-  }
-
   if (!settings.lyricsEnabled) {
     return <p className="px-6 py-4 text-sm text-muted-foreground">Lyrics are disabled in settings.</p>
   }
@@ -165,26 +161,21 @@ export function LyricsPanel() {
         {hasCjk ? (
           <Button
             variant={romanize ? "secondary" : "ghost"}
-            size="sm"
+            size="xs"
             aria-pressed={romanize}
             aria-label="Romanize lyrics"
             disabled={romanizing}
             onClick={() => void update({ lyricsRomanize: !romanize })}
           >
-            {romanizing ? <Spinner data-icon="inline-start" /> : <LanguagesIcon data-icon="inline-start" />}
+            {romanizing ? (
+              <Spinner data-icon="inline-start" className="size-3" />
+            ) : (
+              <LanguagesIcon data-icon="inline-start" />
+            )}
             Romanize
           </Button>
         ) : null}
         <div className="ml-auto flex items-center gap-1">
-          <Button variant="ghost" size="sm" aria-label="Lyrics earlier" onClick={() => nudge(-500)}>
-            −0.5s
-          </Button>
-          <Button variant="ghost" size="sm" aria-label="Reset lyric offset" onClick={() => void update({ lyricsOffsetMs: 0 })}>
-            {offset === 0 ? "0.0s" : `${offset > 0 ? "+" : ""}${(offset / 1000).toFixed(1)}s`}
-          </Button>
-          <Button variant="ghost" size="sm" aria-label="Lyrics later" onClick={() => nudge(500)}>
-            +0.5s
-          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
