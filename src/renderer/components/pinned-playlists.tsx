@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import type { MediaItem } from "@shared/types"
 import { LibraryIcon, ListMusicIcon, PinIcon, PinOffIcon } from "lucide-react"
 import { api, unwrap } from "@/lib/ipc"
@@ -59,16 +59,33 @@ export function PinnedPlaylists() {
   const activeId = current.name === "playlist" ? bareId(current.id) : null
   const loadingList = open && !error && (loading || !data)
 
+  // Backfill covers (and renamed titles) for playlists pinned before thumbnails were stored.
+  useEffect(() => {
+    if (!playlists.length) return
+    const list = useSettings.getState().settings.pinnedPlaylists
+    if (!list.length) return
+    let changed = false
+    const next = list.map((entry) => {
+      const match = playlists.find((item) => bareId(item.id) === bareId(entry.id))
+      if (!match) return entry
+      const thumbnail = match.thumbnail ?? null
+      if (entry.title === match.title && entry.thumbnail === thumbnail) return entry
+      changed = true
+      return { ...entry, title: match.title, thumbnail }
+    })
+    if (changed) void useSettings.getState().update({ pinnedPlaylists: next })
+  }, [playlists])
+
   if (!signedIn) return null
 
-  const toggle = (playlist: { id: string; title: string }): void => {
+  const toggle = (playlist: { id: string; title: string; thumbnail: string | null }): void => {
     const list = useSettings.getState().settings.pinnedPlaylists
     const id = bareId(playlist.id)
     const exists = list.some((entry) => bareId(entry.id) === id)
     void update({
       pinnedPlaylists: exists
         ? list.filter((entry) => bareId(entry.id) !== id)
-        : [...list, { id: playlist.id, title: playlist.title }],
+        : [...list, { id: playlist.id, title: playlist.title, thumbnail: playlist.thumbnail ?? null }],
     })
   }
 
@@ -124,7 +141,19 @@ export function PinnedPlaylists() {
                 tooltip={playlist.title}
                 onClick={() => navigate({ name: "playlist", id: playlist.id, title: playlist.title })}
               >
-                <ListMusicIcon />
+                {playlist.thumbnail ? (
+                  <img
+                    src={playlist.thumbnail}
+                    alt=""
+                    width={32}
+                    height={32}
+                    loading="lazy"
+                    decoding="async"
+                    className="size-4 shrink-0 rounded-[4px] object-cover"
+                  />
+                ) : (
+                  <ListMusicIcon />
+                )}
                 <span>{playlist.title}</span>
               </SidebarMenuButton>
               <SidebarMenuAction

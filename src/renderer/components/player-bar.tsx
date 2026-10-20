@@ -1,9 +1,12 @@
 import { useSyncExternalStore, useEffect, useState } from "react"
+import type { Track } from "@shared/types"
+import { toast } from "sonner"
 import {
   CaptionsIcon,
   GripVerticalIcon,
   HeartIcon,
   ListMusicIcon,
+  ListPlusIcon,
   PauseIcon,
   PlayIcon,
   Repeat1Icon,
@@ -19,11 +22,20 @@ import { Button } from "@/components/ui/button"
 import { Slider } from "@/components/ui/slider"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { cn } from "cn"
 import { formatTime } from "@/lib/media"
 import { useIncrementalList } from "@/lib/incremental"
 import { ArtistLinks } from "@/components/artist-links"
+import { AddToPlaylistDialog } from "@/components/add-to-playlist"
 import { LyricsPanel } from "@/components/lyrics-panel"
+import { useAuth } from "@/lib/store/auth"
 import { usePlayer } from "@/lib/store/player"
 import { useQueue } from "@/lib/store/queue"
 import { useSettings } from "@/lib/store/settings"
@@ -53,7 +65,9 @@ export function PlayerBar() {
   const position = usePosition()
   const update = useSettings((state) => state.update)
   const lyricsEnabled = useSettings((state) => state.settings.lyricsEnabled)
+  const signedIn = useAuth((state) => state.state.signedIn)
   const [scrubbing, setScrubbing] = useState<number | null>(null)
+  const [addTo, setAddTo] = useState<Track | null>(null)
   const display = scrubbing ?? position
   const playing = status === "playing"
   const VolumeIcon = muted || volume === 0 ? VolumeXIcon : volume < 0.5 ? Volume1Icon : Volume2Icon
@@ -67,18 +81,38 @@ export function PlayerBar() {
           ) : (
             <div className="size-12 rounded-lg bg-muted" />
           )}
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">{current?.title ?? "Nothing playing"}</span>
-            <span className={cn("truncate text-xs", error ? "text-destructive" : "text-muted-foreground")}>
-              {error ? (
-                error
-              ) : current ? (
-                <ArtistLinks artists={current.artists} fallback={current.subtitle} />
-              ) : (
-                "Pick a song to start"
-              )}
-            </span>
-          </div>
+          <ContextMenu>
+            <ContextMenuTrigger className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-medium">{current?.title ?? "Nothing playing"}</span>
+              <span className={cn("truncate text-xs", error ? "text-destructive" : "text-muted-foreground")}>
+                {error ? (
+                  error
+                ) : current ? (
+                  <ArtistLinks artists={current.artists} fallback={current.subtitle} />
+                ) : (
+                  "Pick a song to start"
+                )}
+              </span>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuGroup>
+                <ContextMenuItem
+                  disabled={!current}
+                  onClick={() => {
+                    if (!current) return
+                    if (!signedIn) {
+                      toast.error("Sign in to edit your library")
+                      return
+                    }
+                    setAddTo(current)
+                  }}
+                >
+                  <ListPlusIcon />
+                  Add to playlist
+                </ContextMenuItem>
+              </ContextMenuGroup>
+            </ContextMenuContent>
+          </ContextMenu>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -208,6 +242,12 @@ export function PlayerBar() {
         />
         <span className="w-9 text-[11px] tabular-nums text-muted-foreground">{formatTime(duration)}</span>
       </div>
+      <AddToPlaylistDialog
+        videoId={addTo?.videoId ?? ""}
+        title={addTo?.title ?? ""}
+        open={addTo !== null}
+        onOpenChange={(open) => !open && setAddTo(null)}
+      />
     </footer>
   )
 }

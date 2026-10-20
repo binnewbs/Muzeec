@@ -146,6 +146,7 @@ export type LyricsRequest = {
 export type PinnedPlaylist = {
   id: string
   title: string
+  thumbnail: string | null
 }
 
 export type AppSettings = {

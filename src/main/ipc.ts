@@ -322,12 +322,15 @@ export function registerIpc(): void {
       for (const entry of input.pinnedPlaylists) {
         if (pinned.length >= 50) break
         if (!entry || typeof entry !== "object") continue
-        const { id, title } = entry as Record<string, unknown>
+        const { id, title, thumbnail } = entry as Record<string, unknown>
         if (typeof id !== "string" || !id.length || id.length > 200) continue
         if (typeof title !== "string" || !title.length || title.length > 300) continue
+        if (thumbnail !== null && thumbnail !== undefined) {
+          if (typeof thumbnail !== "string" || thumbnail.length > 1000 || !thumbnail.startsWith("https://")) continue
+        }
         if (seen.has(id)) continue
         seen.add(id)
-        pinned.push({ id, title })
+        pinned.push({ id, title, thumbnail: typeof thumbnail === "string" ? thumbnail : null })
       }
       next.pinnedPlaylists = pinned
     }
