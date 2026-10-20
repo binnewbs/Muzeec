@@ -3,7 +3,7 @@ import type { AppSettings, PlayerState, Rating, Track } from "../shared/types.ts
 import { authState, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
 import { innertube } from "./youtube/innertube.ts"
-import { parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
+import { appendBrowseItems, parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
 import { clearPlayerCaches, resolvePlayer, resolveMusicTrack, PlayerFailure } from "./youtube/player.ts"
 import { trackHistory, flushHistory } from "./youtube/history.ts"
 import { rate, addToPlaylist, createPlaylist, deletePlaylist, subscribe } from "./youtube/sync.ts"
@@ -21,6 +21,13 @@ function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid payload")
   return value as Record<string, unknown>
 }
+
+/** Album and playlist browse IDs return track lists in ~100-item chunks. */
+function pagedCollection(browseId: string): boolean {
+  return browseId.startsWith("VL") || browseId.startsWith("MPRE")
+}
+
+const MAX_CONTINUATIONS = 100
 
 export function registerIpc(): void {
   ipcMain.handle("sys:windowMinimize", (event) => {
@@ -60,7 +67,18 @@ export function registerIpc(): void {
     const cached = cacheGet(key)
     if (cached) return cached
     const json = await innertube("browse", { browseId: id })
-    const page = parseBrowsePage(json, id)
+    const feed = parseBrowseFeed(json, id)
+    const page = feed.page
+    if (pagedCollection(id)) {
+      const seen = new Set<string>()
+      let continuation = feed.continuation
+      while (continuation && !seen.has(continuation) && seen.size < MAX_CONTINUATIONS) {
+        seen.add(continuation)
+        const chunk = parseBrowseFeed(await innertube("browse", { continuation }), id)
+        appendBrowseItems(page, chunk.page.shelves.flatMap((shelf) => shelf.items), feed.trackListIndex)
+        continuation = chunk.continuation
+      }
+    }
     if (page.shelves.length === 0) throw new Error("This page returned no playable content")
     return cacheSet(key, page, 2 * 60 * 1000)
   })

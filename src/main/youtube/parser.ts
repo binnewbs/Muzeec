@@ -12,11 +12,81 @@ const SHELF_RENDERERS = new Set([
   "musicShelfRenderer",
   "gridRenderer",
   "musicPlaylistShelfRenderer",
+  "musicCarouselShelfContinuation",
+  "musicShelfContinuation",
+  "gridContinuation",
+  "musicPlaylistShelfContinuation",
+  // Playlist/album chunks arrive as an append action, not as a shelf renderer.
+  "appendContinuationItemsAction",
+  "reloadContinuationItemsCommand",
 ])
+
+const TRACK_LIST_ORDER = [
+  "musicPlaylistShelfRenderer",
+  "musicPlaylistShelfContinuation",
+  "musicShelfRenderer",
+  "musicShelfContinuation",
+  "gridRenderer",
+  "gridContinuation",
+  "musicCarouselShelfRenderer",
+  "musicCarouselShelfContinuation",
+  "appendContinuationItemsAction",
+  "reloadContinuationItemsCommand",
+]
+
+type ShelfHit = { shelf: Shelf; renderer: string; token: string | null }
+
+export type BrowseFeed = {
+  page: BrowsePage
+  continuation: string | null
+  /** Main track list within `page.shelves`, or null when the page has none. */
+  trackListIndex: number | null
+}
 
 /** Tolerant InnerTube walker: recursive renderer search, missing fields absent (DOC §8.4). */
 export function parseBrowsePage(json: any, fallbackTitle: string): BrowsePage {
-  const shelves: Shelf[] = []
+  return parseBrowseFeed(json, fallbackTitle).page
+}
+
+/** One browse response plus the token for the next chunk of a paged list. */
+export function parseBrowseFeed(json: any, fallbackTitle: string): BrowseFeed {
+  const { shelves, continuation, trackListIndex } = parseShelves(json, fallbackTitle)
+  const header = pageHeader(json)
+  const parsed = pruneEmpty(shelves)
+  // Artist banners are not album art, so only reuse collection headers as covers.
+  if (header && !findKey(json, "musicImmersiveHeaderRenderer")) fillFromHeader(parsed, header)
+  const resolvedTitle = pageTitle(json) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle)
+  return { page: { title: resolvedTitle, shelves: parsed, header }, continuation, trackListIndex }
+}
+
+/** Append a continuation chunk to the page's main track list, skipping overlap at page edges. */
+export function appendBrowseItems(page: BrowsePage, items: MediaItem[], targetIndex?: number | null): void {
+  if (!items.length) return
+  const seen = new Set(page.shelves.flatMap((shelf) => shelf.items.map((item) => item.kind + item.id)))
+  const indexed = targetIndex === null || targetIndex === undefined ? undefined : page.shelves[targetIndex]
+  let target =
+    indexed ??
+    page.shelves.find(
+      (shelf) => shelf.items.length > 0 && shelf.items.every((item) => item.kind === "track"),
+    ) ??
+    page.shelves.at(-1)
+  if (!target) {
+    target = { title: "", items: [] }
+    page.shelves.push(target)
+  }
+  for (const item of items) {
+    const key = item.kind + item.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    target.items.push(item)
+  }
+}
+
+function parseShelves(
+  json: any,
+  fallbackTitle: string,
+): { shelves: Shelf[]; continuation: string | null; trackListIndex: number | null } {
+  const hits: ShelfHit[] = []
   const seen = new Set<string>()
 
   walk(json, (node) => {
@@ -29,16 +99,34 @@ export function parseBrowsePage(json: any, fallbackTitle: string): BrowsePage {
         return true
       })
       if (!items.length) continue
-      shelves.push({ title: shelfTitle(renderer) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle), items })
+      const shelf = { title: shelfTitle(renderer) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle), items }
+      hits.push({ shelf, renderer: key, token: continuationOf(renderer) })
     }
   })
 
-  const header = pageHeader(json)
-  const parsed = pruneEmpty(shelves)
-  // Artist banners are not album art, so only reuse collection headers as covers.
-  if (header && !findKey(json, "musicImmersiveHeaderRenderer")) fillFromHeader(parsed, header)
-  const resolvedTitle = pageTitle(json) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle)
-  return { title: resolvedTitle, shelves: parsed, header }
+  const trackListIndex = pickTrackList(hits)
+  const continuation = trackListIndex === null ? null : hits[trackListIndex].token
+  return { shelves: hits.map((hit) => hit.shelf), continuation, trackListIndex }
+}
+
+/** Only the main track list pages; carousel tokens would append albums to a track page. */
+function pickTrackList(hits: ShelfHit[]): number | null {
+  for (const renderer of TRACK_LIST_ORDER) {
+    const index = hits.findIndex(
+      (hit) => hit.renderer === renderer && hit.shelf.items.every((item) => item.kind === "track"),
+    )
+    if (index >= 0) return index
+  }
+  return null
+}
+
+function continuationOf(renderer: any): string | null {
+  return (
+    findKey(renderer, "continuationItemRenderer")?.continuationEndpoint?.continuationCommand?.token ??
+    findKey(renderer, "continuationCommand")?.token ??
+    findKey(renderer, "nextContinuationData")?.continuation ??
+    null
+  )
 }
 
 /** Radio/autoplay queue from the `next` endpoint (`RDAMVM<videoId>`). */
