@@ -379,7 +379,7 @@ And, depending on the endpoint, the body carries:
 ```jsonc
 "context": {
   "user": {
-    "onBehalfOfUser": "<DATASYNC_ID>"
+    "onBehalfOfUser": "<DELEGATED_SESSION_ID>"
   }
 }
 ```
@@ -460,12 +460,12 @@ Read these from the `music.youtube.com` shell or from the live page's `ytcfg`:
 |---|---|
 | `LOGGED_IN` | Must be true before trusting any id |
 | `SESSION_INDEX` | `X-Goog-AuthUser` |
-| `DELEGATED_SESSION_ID` | `X-Goog-PageId` for a brand channel |
-| `DATASYNC_ID` | `context.user.onBehalfOfUser` |
+| `DELEGATED_SESSION_ID` | `X-Goog-PageId` and `context.user.onBehalfOfUser` for a brand channel |
+| `DATASYNC_ID` | Local account keys; not an InnerTube auth field |
 | `VISITOR_DATA` | `X-Goog-Visitor-Id` |
 | `INNERTUBE_CLIENT_VERSION` | WEB_REMIX client version |
 
-Never guess `DATASYNC_ID`. A value Google cannot tie to the cookie is answered with `401` on every request.
+Never guess `DELEGATED_SESSION_ID`. A value Google cannot tie to the cookie is answered with `401` on every request.
 
 If the shell says it is signed out, ignore its `DATASYNC_ID`. Keep only its client version.
 
@@ -1173,7 +1173,7 @@ Do not start with UI polish.
 - Hardcoding `INNERTUBE_CLIENT_VERSION`.
 - Omitting visitor data.
 - Treating `playabilityStatus: OK` as proof of playable audio.
-- Guessing `DATASYNC_ID`.
+- Sending `DATASYNC_ID` as `onBehalfOfUser`; it must be `DELEGATED_SESSION_ID`.
 - Checking `includes('SAPISID')` instead of exact cookie names.
 - Sending `Origin: app://...` to YouTube endpoints.
 - Attaching a web `Origin` to VISIONOS direct URLs.
