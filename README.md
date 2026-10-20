@@ -16,6 +16,10 @@ Muzeec is an unofficial YouTube Music desktop app built for a fast, clean listen
 
 It is a personal project: small, keyboard-friendly, and designed to stay out of the way.
 
+<p align="center">
+  <img src="resources/ss.png" alt="Muzeec home screen with the sidebar, pinned playlists, and the player bar" width="900" />
+</p>
+
 ## Features
 
 ### Listening
