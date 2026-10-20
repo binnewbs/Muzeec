@@ -78,13 +78,6 @@ export type PlayerError = {
   permanent: boolean
 }
 
-export type PlaybackTracking = {
-  playbackUrl: string | null
-  atrUrl: string | null
-  watchtimeUrl: string | null
-  cpn: string
-}
-
 export type HistoryEvent = {
   videoId: string
   event: "start" | "progress" | "end"

@@ -45,7 +45,54 @@ const MAX_DECISIONS = 40
 const exclusions = new Map<string, number>()
 const inflight = new Map<string, Promise<PlayerDecision>>()
 const decisions = new Map<string, { decision: PlayerDecision; expires: number }>()
+const trackingInflight = new Map<string, Promise<any | null>>()
 export const verdicts = new Map<string, { reason: string; expires: number }>()
+
+function trackingKey(videoId: string): string {
+  return `tracking:web:${videoId}`
+}
+
+/**
+ * WEB_REMIX playback tracking is what YouTube Music accepts for account history.
+ * Streams may resolve through VISIONOS, so request web tracking separately.
+ */
+export function getWebTracking(videoId: string): Promise<any | null> {
+  const cached = cacheGet<any>(trackingKey(videoId))
+  if (cached) return Promise.resolve(cached)
+  return ensureWebTracking(videoId)
+}
+
+function ensureWebTracking(videoId: string): Promise<any | null> {
+  const existing = trackingInflight.get(videoId)
+  if (existing) return existing
+  const promise = fetchWebTracking(videoId)
+    .then((tracking) => {
+      if (tracking) cacheSet(trackingKey(videoId), tracking, 30 * 60 * 1000)
+      return tracking
+    })
+    .catch(() => null)
+    .finally(() => trackingInflight.delete(videoId))
+  trackingInflight.set(videoId, promise)
+  return promise
+}
+
+async function fetchWebTracking(videoId: string): Promise<any | null> {
+  const info = await getClientInfo()
+  const response: any = await innertube(
+    "player",
+    {
+      videoId,
+      contentCheckOk: true,
+      racyCheckOk: true,
+      playbackContext: {
+        contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
+      },
+    },
+    { client: CLIENTS[0], retries: 0 },
+  )
+  if (response?.playabilityStatus?.status !== "OK") return null
+  return response?.playbackTracking ?? null
+}
 
 export function clearPlayerCaches(): void {
   exclusions.clear()
@@ -166,7 +213,8 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
 
       const tracking = response?.playbackTracking
       if (tracking) {
-        cacheSet(`tracking:${videoId}`, tracking, 30 * 60 * 1000)
+        if (client.name === "WEB_REMIX") cacheSet(trackingKey(videoId), tracking, 30 * 60 * 1000)
+        else if (signedIn) void ensureWebTracking(videoId)
       }
 
       for (const format of audio.slice(0, 2)) {
