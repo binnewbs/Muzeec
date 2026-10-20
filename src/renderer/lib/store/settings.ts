@@ -14,6 +14,7 @@ const DEFAULTS: AppSettings = {
   lyricsOffsetMs: 0,
   lastTrack: null,
   lastPosition: 0,
+  searchHistory: [],
 }
 
 type SettingsStore = {

@@ -15,6 +15,7 @@ const DEFAULTS: AppSettings = {
   lyricsOffsetMs: 0,
   lastTrack: null,
   lastPosition: 0,
+  searchHistory: [],
 }
 
 const file = () => path.join(app.getPath("userData"), "settings.json")

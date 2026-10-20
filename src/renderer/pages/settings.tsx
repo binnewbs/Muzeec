@@ -279,6 +279,20 @@ export default function SettingsPage() {
                 </Field>
                 <Field orientation="horizontal">
                   <FieldContent>
+                    <FieldTitle>Search history</FieldTitle>
+                    <FieldDescription>Recent searches stay on this device.</FieldDescription>
+                  </FieldContent>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={!settings.searchHistory.length}
+                    onClick={() => void update({ searchHistory: [] })}
+                  >
+                    Clear
+                  </Button>
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldContent>
                     <FieldTitle>Theme</FieldTitle>
                     <FieldDescription>System follows your desktop appearance.</FieldDescription>
                   </FieldContent>

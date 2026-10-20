@@ -145,6 +145,7 @@ export type AppSettings = {
   lyricsOffsetMs: number
   lastTrack: Track | null
   lastPosition: number
+  searchHistory: string[]
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }

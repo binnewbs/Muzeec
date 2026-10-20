@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
 import type { AppSettings, PlayerState, Rating, Track } from "../shared/types.ts"
+import { normalizeSearchHistory } from "../shared/search-history.ts"
 import { authState, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
 import { innertube } from "./youtube/innertube.ts"
@@ -263,6 +264,9 @@ export function registerIpc(): void {
     }
     if (typeof input.lastPosition === "number" && Number.isFinite(input.lastPosition)) {
       next.lastPosition = Math.max(0, input.lastPosition)
+    }
+    if (Array.isArray(input.searchHistory)) {
+      next.searchHistory = normalizeSearchHistory(input.searchHistory)
     }
     if (input.lastTrack === null) {
       next.lastTrack = null
