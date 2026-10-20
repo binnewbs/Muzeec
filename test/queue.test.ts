@@ -33,3 +33,29 @@ test("queue keeps only explicit additions and supports reorder/drain", () => {
   queue.clear()
   assert.deepEqual(ids(), [])
 })
+
+test("stepping back through history keeps the queue forward-consistent", () => {
+  const queue = useQueue.getState()
+  queue.clear()
+  // Playlist [1,2,3,4], song 1 playing: the queue holds the upcoming songs.
+  queue.replace([track("2"), track("3"), track("4")])
+  assert.equal(queue.takeNext()?.videoId, "2")
+  assert.equal(queue.takeNext()?.videoId, "3")
+  assert.deepEqual(ids(), ["4"])
+
+  // previous() from 3 to 2, then from 2 to 1.
+  queue.prepend(track("3"))
+  queue.prepend(track("2"))
+
+  // next() must replay 2, not skip ahead to 4.
+  assert.equal(queue.takeNext()?.videoId, "2")
+  assert.equal(queue.takeNext()?.videoId, "3")
+  assert.equal(queue.takeNext()?.videoId, "4")
+
+  // Never duplicate a track that is already queued.
+  queue.clear()
+  queue.replace([track("a"), track("b")])
+  queue.prepend(track("b"))
+  assert.deepEqual(ids(), ["a", "b"])
+  queue.clear()
+})

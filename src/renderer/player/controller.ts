@@ -245,6 +245,10 @@ export function previous(): void {
     seek(0)
     return
   }
+  // Put the track we are leaving back at the head of the queue, otherwise the
+  // next press resumes from the old queue head and skips what we just played.
+  const current = usePlayer.getState().current
+  if (current) useQueue.getState().prepend(current)
   void startTrack(previousTrack, false)
 }
 

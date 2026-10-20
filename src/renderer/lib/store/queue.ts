@@ -15,6 +15,8 @@ type QueueStore = {
   replace: (tracks: Track[]) => void
   addNext: (track: Track) => void
   append: (track: Track) => void
+  /** Return a track to the front of the queue (history navigation) unless it is already there. */
+  prepend: (track: Track) => void
   takeNext: () => Track | null
   remove: (index: number) => void
   move: (from: number, to: number) => void
@@ -40,6 +42,11 @@ export const useQueue = create<QueueStore>((set, get) => ({
   unshuffledTracks: null,
   replace: (tracks) => set({ tracks }),
   addNext: (track) => set({ tracks: [track, ...get().tracks] }),
+  prepend: (track) => {
+    const tracks = get().tracks
+    if (tracks.some((entry) => entry.videoId === track.videoId)) return
+    set({ tracks: [track, ...tracks] })
+  },
   append: (track) => {
     const tracks = [...get().tracks]
     const index = get().shuffle ? Math.floor(Math.random() * (tracks.length + 1)) : tracks.length
