@@ -44,7 +44,17 @@ export function TrackList({ items, context, layout = "list" }: Props) {
         const track = toTrack(item)
         const active = currentId === track.videoId
         const artistCount = track.artists?.length ?? 0
-        const rest = artistCount ? track.subtitle.split(" • ").slice(1).join(" • ") : ""
+        const artistNames = (track.artists ?? []).map((artist) => artist.name.trim().toLowerCase()).filter(Boolean)
+        const typeLabels = new Set(["song", "video", "single", "album", "ep", "podcast", "music video"])
+        const isArtistSegment = (part: string) =>
+          artistNames.length > 0 && artistNames.every((name) => part.toLowerCase().includes(name))
+        const rest = artistCount
+          ? track.subtitle
+              .split(" • ")
+              .map((part) => part.trim())
+              .filter((part) => part && !typeLabels.has(part.toLowerCase()) && !isArtistSegment(part))
+              .join(" • ")
+          : ""
         const artistId = track.artists?.find((artist) => artist.id)?.id
         return (
           <div

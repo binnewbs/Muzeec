@@ -29,7 +29,7 @@ export function parseBrowsePage(json: any, fallbackTitle: string): BrowsePage {
         return true
       })
       if (!items.length) continue
-      shelves.push({ title: shelfTitle(renderer) ?? fallbackTitle, items })
+      shelves.push({ title: shelfTitle(renderer) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle), items })
     }
   })
 
@@ -37,7 +37,8 @@ export function parseBrowsePage(json: any, fallbackTitle: string): BrowsePage {
   const parsed = pruneEmpty(shelves)
   // Artist banners are not album art, so only reuse collection headers as covers.
   if (header && !findKey(json, "musicImmersiveHeaderRenderer")) fillFromHeader(parsed, header)
-  return { title: pageTitle(json) ?? fallbackTitle, shelves: parsed, header }
+  const resolvedTitle = pageTitle(json) ?? (isBrowseId(fallbackTitle) ? "" : fallbackTitle)
+  return { title: resolvedTitle, shelves: parsed, header }
 }
 
 /** Radio/autoplay queue from the `next` endpoint (`RDAMVM<videoId>`). */
@@ -60,7 +61,13 @@ function fillFromHeader(shelves: Shelf[], header: PageHeader): void {
       if (!item.thumbnail && header.thumbnail) item.thumbnail = header.thumbnail
       if (item.kind !== "track" || item.artists?.length || !header.artists.length) continue
       item.artists = header.artists
-      item.subtitle = [names, item.subtitle].filter(Boolean).join(" • ")
+      const parts = item.subtitle ? item.subtitle.split(/\s*[•·]\s*/).filter(Boolean) : []
+      const alreadyHasArtist = parts.some((part) =>
+        header.artists.every((artist) => part.toLowerCase().includes(artist.name.toLowerCase())),
+      )
+      if (!alreadyHasArtist) {
+        item.subtitle = [names, item.subtitle].filter(Boolean).join(" • ")
+      }
     }
   }
 }
@@ -294,6 +301,11 @@ export function findKey(node: any, key: string): any {
     if (hit) return hit
   }
   return null
+}
+
+/** Detect browse IDs that should never be shown as human-readable titles. */
+function isBrowseId(value: string | null | undefined): boolean {
+  return /^(VL|MPRE|UC|RDCLAK|FEmusic_)/.test(value ?? "")
 }
 
 export function walk(node: any, visit: (node: any) => void): void {

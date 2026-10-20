@@ -1,4 +1,5 @@
 import { app, BrowserWindow } from "electron"
+import path from "node:path"
 import { registerProtocolCsp } from "./protocol.ts"
 import { installSessionRewriters, ytSession } from "./youtube/session.ts"
 import { registerIpc } from "./ipc.ts"
@@ -28,6 +29,9 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.whenReady().then(() => {
+    if (process.platform === "darwin") {
+      app.dock?.setIcon(path.join(import.meta.dirname, "../../resources/icon.png"))
+    }
     installSessionRewriters()
     registerProtocolCsp(ytSession(), !app.isPackaged)
     registerIpc()

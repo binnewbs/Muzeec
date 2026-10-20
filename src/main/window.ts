@@ -5,6 +5,7 @@ import { YT_PARTITION } from "./youtube/session.ts"
 import { authState, captureSession, type CapturedConfig } from "./youtube/auth.ts"
 
 const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === "development"
+const icon = path.join(import.meta.dirname, "../../resources/icon.png")
 
 export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -14,6 +15,7 @@ export function createMainWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     frame: false,
+    icon,
     backgroundColor: "#0a0a0a",
     webPreferences: {
       partition: YT_PARTITION,
@@ -72,6 +74,7 @@ export async function openLogin(parent: BrowserWindow): Promise<AuthState> {
     parent,
     modal: true,
     show: false,
+    icon,
     title: "Sign in to YouTube Music",
     webPreferences: {
       partition: YT_PARTITION,

@@ -49,7 +49,9 @@ export function MediaCard({ item, fill = false }: Props) {
           </div>
         </div>
         <CardContent className="flex flex-col gap-0.5 p-3">
-          <span className="truncate text-sm font-medium">{item.title}</span>
+          <span className="truncate text-sm font-medium">
+            {/^(VL|MPRE|UC|RDCLAK|FEmusic_)/.test(item.title) ? "Untitled" : item.title}
+          </span>
           <span className="truncate text-xs text-muted-foreground">{item.subtitle}</span>
         </CardContent>
       </Card>

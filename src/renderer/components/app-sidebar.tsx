@@ -1,4 +1,4 @@
-import { CompassIcon, HomeIcon, LibraryIcon, LogOutIcon, MusicIcon, SearchIcon, SettingsIcon } from "lucide-react"
+import { CompassIcon, HomeIcon, LibraryIcon, LogOutIcon, SearchIcon, SettingsIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Logo } from "@/components/logo"
 import { useAuth } from "@/lib/store/auth"
 import { useView, type View } from "@/lib/store/view"
 
@@ -41,17 +42,17 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="py-1">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
               size="lg"
               onClick={toggleSidebar}
               tooltip="Muzeec"
-              className="group-data-[collapsible=icon]:justify-center"
+              className="h-12 group-data-[collapsible=icon]:justify-center"
             >
               <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <MusicIcon className="size-4" />
+                <Logo className="size-5" />
               </div>
               <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                 <span className="font-heading text-sm font-semibold">Muzeec</span>
@@ -62,7 +63,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
+        <SidebarGroup className="pt-1">
           <SidebarGroupLabel>Browse</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
