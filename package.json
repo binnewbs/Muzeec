@@ -2,6 +2,9 @@
   "name": "muzeec",
   "private": true,
   "version": "1.0.1",
+  "description": "A minimal, modern YouTube Music desktop client.",
+  "author": "Bintang M",
+  "desktopName": "muzeec.desktop",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -9,7 +12,10 @@
     "build": "tsc --noEmit && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
+    "test": "node --test test/*.test.ts",
+    "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux AppImage",
+    "dist:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -35,9 +41,48 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
+  },
+  "build": {
+    "appId": "com.muzeec.app",
+    "productName": "Muzeec",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "AudioVideo",
+      "executableName": "muzeec",
+      "syncDesktopName": true,
+      "icon": "resources/icon.png"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
