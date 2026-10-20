@@ -1,10 +1,10 @@
-import { BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
-import type { AppSettings, PlayerState, Rating } from "../shared/types.ts"
+import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
+import type { AppSettings, PlayerState, Rating, Track } from "../shared/types.ts"
 import { authState, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
 import { innertube } from "./youtube/innertube.ts"
-import { parseBrowsePage } from "./youtube/parser.ts"
-import { clearPlayerCaches, resolvePlayer, PlayerFailure } from "./youtube/player.ts"
+import { parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
+import { clearPlayerCaches, resolvePlayer, resolveMusicTrack, PlayerFailure } from "./youtube/player.ts"
 import { trackHistory, flushHistory } from "./youtube/history.ts"
 import { rate, addToPlaylist, createPlaylist, deletePlaylist, subscribe } from "./youtube/sync.ts"
 import { getSettings, updateSettings } from "./storage/settings.ts"
@@ -23,6 +23,20 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 export function registerIpc(): void {
+  ipcMain.handle("sys:windowMinimize", (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.minimize()
+  })
+
+  ipcMain.handle("sys:windowToggleMaximize", (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+
+  ipcMain.handle("sys:windowMaximized", (event) => BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false)
+  ipcMain.handle("sys:windowQuit", () => app.quit())
+
   ipcMain.handle("yt:authState", () => authState())
 
   ipcMain.handle("yt:login", async (event) => {
@@ -76,6 +90,25 @@ export function registerIpc(): void {
       shelves: pages.flatMap((result) => result.shelves),
     }
     return cacheSet(key, page, 5 * 60 * 1000)
+  })
+
+  ipcMain.handle("yt:radio", async (_event, input) => {
+    const { videoId } = record(input)
+    const id = text(videoId, "videoId", 32)
+    const musicId = await resolveMusicTrack(id)
+    const key = `radio:${musicId}`
+    const cached = cacheGet(key)
+    if (cached) return cached
+    const json = await innertube("next", { videoId: musicId, playlistId: `RDAMVM${musicId}` })
+    const tracks = parseQueueTracks(json)
+    if (!tracks.length) throw new Error("No autoplay songs found")
+    return cacheSet(key, tracks, 10 * 60 * 1000)
+  })
+
+  ipcMain.handle("yt:musicTrack", async (_event, input) => {
+    const { videoId } = record(input)
+    const id = text(videoId, "videoId", 32)
+    return await resolveMusicTrack(id)
   })
 
   ipcMain.handle("yt:player", async (_event, input) => {
@@ -209,6 +242,21 @@ export function registerIpc(): void {
     if (typeof input.lyricsOffsetMs === "number" && Number.isFinite(input.lyricsOffsetMs)) {
       next.lyricsOffsetMs = Math.max(-5000, Math.min(5000, Math.round(input.lyricsOffsetMs)))
       lyricsChanged = true
+    }
+    if (typeof input.lastPosition === "number" && Number.isFinite(input.lastPosition)) {
+      next.lastPosition = Math.max(0, input.lastPosition)
+    }
+    if (input.lastTrack === null) {
+      next.lastTrack = null
+    } else if (
+      input.lastTrack &&
+      typeof input.lastTrack === "object" &&
+      input.lastTrack.kind === "track" &&
+      typeof input.lastTrack.id === "string" &&
+      typeof input.lastTrack.title === "string" &&
+      typeof input.lastTrack.videoId === "string"
+    ) {
+      next.lastTrack = input.lastTrack as Track
     }
     if (lyricsChanged) cacheClear("lyrics")
     return updateSettings(next)

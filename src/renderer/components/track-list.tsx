@@ -1,6 +1,6 @@
 import { useState } from "react"
 import type { MediaItem, Track } from "@shared/types"
-import { MoreHorizontalIcon, MusicIcon, PauseIcon, PlayIcon } from "lucide-react"
+import { MoreHorizontalIcon, ListPlusIcon, MusicIcon, PauseIcon, PlayIcon } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { AddToPlaylistDialog } from "@/components/add-to-playlist"
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { formatDuration, toTrack } from "@/lib/media"
 import { usePlayer } from "@/lib/store/player"
-import { playTracks, playTrack, playTrackNext, likeTrack, toggleLike, togglePlay } from "@/player/controller"
+import { playTracks, playTrack, playTrackNext, addToQueue, likeTrack, toggleLike, togglePlay } from "@/player/controller"
 
 type Props = {
   items: MediaItem[]
@@ -24,17 +24,17 @@ type Props = {
   layout?: "list" | "grid"
 }
 
-export function TrackList({ items, context = items, layout = "list" }: Props) {
+export function TrackList({ items, context, layout = "list" }: Props) {
   const currentId = usePlayer((state) => state.current?.videoId)
   const playing = usePlayer((state) => state.status === "playing")
   const signedIn = useAuth((state) => state.state.signedIn)
   const navigate = useView((state) => state.navigate)
   const [addTo, setAddTo] = useState<Track | null>(null)
-  const tracks = context.filter((item) => item.kind === "track").map(toTrack)
+  const collection = context?.filter((item) => item.kind === "track").map(toTrack) ?? []
 
   const play = (track: Track) => {
-    const index = tracks.findIndex((entry) => entry.videoId === track.videoId)
-    if (tracks.length > 1 && index >= 0) void playTracks(tracks, index)
+    const index = collection.findIndex((entry) => entry.videoId === track.videoId)
+    if (collection.length > 1 && index >= 0) void playTracks(collection, index)
     else void playTrack(track)
   }
 
@@ -113,6 +113,10 @@ export function TrackList({ items, context = items, layout = "list" }: Props) {
                 <DropdownMenuGroup>
                   <DropdownMenuItem onClick={() => play(track)}>Play</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => playTrackNext(track)}>Play next</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => addToQueue(track)}>
+                    <ListPlusIcon data-icon="inline-start" />
+                    Add to queue
+                  </DropdownMenuItem>
                   {artistId ? (
                     <DropdownMenuItem
                       onClick={() => navigate({ name: "artist", id: artistId, title: track.artists?.[0]?.name })}

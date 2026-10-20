@@ -10,6 +10,7 @@ import type {
   PlayerDecision,
   PlayerState,
   Rating,
+  Track,
 } from "../shared/types.ts"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -28,7 +29,9 @@ export type MuzeecApi = {
   logout: () => Promise<Result<AuthState>>
   browse: (input: { browseId: string }) => Promise<Result<BrowsePage>>
   search: (input: { query: string }) => Promise<Result<BrowsePage>>
+  radio: (input: { videoId: string }) => Promise<Result<Track[]>>
   player: (input: { videoId: string }) => Promise<Result<PlayerDecision>>
+  musicTrack: (input: { videoId: string }) => Promise<Result<string>>
   like: (input: { videoId: string; rating: Rating }) => Promise<Result<void>>
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
@@ -41,6 +44,11 @@ export type MuzeecApi = {
   getSettings: () => Promise<Result<AppSettings>>
   setSettings: (patch: Partial<AppSettings>) => Promise<Result<AppSettings>>
   setPlayerState: (state: PlayerState) => Promise<Result<boolean>>
+  windowMinimize: () => Promise<Result<void>>
+  windowToggleMaximize: () => Promise<Result<void>>
+  windowMaximized: () => Promise<Result<boolean>>
+  windowQuit: () => Promise<Result<void>>
+  onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
 }
 
@@ -50,7 +58,9 @@ const api: MuzeecApi = {
   logout: () => call("yt:logout"),
   browse: (input) => call("yt:browse", input),
   search: (input) => call("yt:search", input),
+  radio: (input) => call("yt:radio", input),
   player: (input) => call("yt:player", input),
+  musicTrack: (input) => call("yt:musicTrack", input),
   like: (input) => call("yt:like", input),
   playlistCreate: (input) => call("yt:playlistCreate", input),
   playlistAdd: (input) => call("yt:playlistAdd", input),
@@ -63,6 +73,15 @@ const api: MuzeecApi = {
   getSettings: () => call("sys:settingsGet"),
   setSettings: (patch) => call("sys:settingsSet", patch),
   setPlayerState: (state) => call("sys:playerState", state),
+  windowMinimize: () => call("sys:windowMinimize"),
+  windowToggleMaximize: () => call("sys:windowToggleMaximize"),
+  windowMaximized: () => call("sys:windowMaximized"),
+  windowQuit: () => call("sys:windowQuit"),
+  onWindowMaximized: (callback) => {
+    const listener = (_event: unknown, maximized: boolean) => callback(maximized)
+    ipcRenderer.on("sys:windowMaximized", listener)
+    return () => ipcRenderer.removeListener("sys:windowMaximized", listener)
+  },
   onMediaKey: (callback) => {
     const listener = (_event: unknown, action: "playpause" | "next" | "previous") => callback(action)
     ipcRenderer.on("sys:mediaKey", listener)

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { AppSidebar } from "@/components/app-sidebar"
 import { CommandPalette } from "@/components/command-palette"
 import { PlayerBar } from "@/components/player-bar"
+import { WindowControls } from "@/components/window-controls"
 import { PageLoading } from "@/components/page-states"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAuth } from "@/lib/store/auth"
@@ -50,19 +51,24 @@ export default function App() {
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset className="flex h-svh min-h-0 flex-col overflow-hidden">
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <SidebarTrigger />
-            <CommandPalette />
-            <Button
-              variant="outline"
-              size="sm"
-              className="ml-auto text-muted-foreground"
-              onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
-            >
-              <SearchIcon data-icon="inline-start" />
-              Search
-              <kbd className="ml-2 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
-            </Button>
+          <header className="app-drag flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <div className="app-no-drag flex items-center gap-2">
+              <SidebarTrigger />
+              <CommandPalette />
+            </div>
+            <div className="app-no-drag ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }))}
+              >
+                <SearchIcon data-icon="inline-start" />
+                Search
+                <kbd className="ml-2 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
+              </Button>
+              <WindowControls />
+            </div>
           </header>
           <div className="min-h-0 flex-1 overflow-hidden">
             <ScrollArea className="h-full">

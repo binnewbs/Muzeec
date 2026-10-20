@@ -9,6 +9,7 @@ import type {
   PlayerDecision,
   PlayerState,
   Rating,
+  Track,
 } from "@shared/types"
 
 type Result<T> = { ok: true; data: T } | { ok: false; error: string }
@@ -19,7 +20,9 @@ export type MuzeecApi = {
   logout: () => Promise<Result<AuthState>>
   browse: (input: { browseId: string }) => Promise<Result<BrowsePage>>
   search: (input: { query: string }) => Promise<Result<BrowsePage>>
+  radio: (input: { videoId: string }) => Promise<Result<Track[]>>
   player: (input: { videoId: string }) => Promise<Result<PlayerDecision>>
+  musicTrack: (input: { videoId: string }) => Promise<Result<string>>
   like: (input: { videoId: string; rating: Rating }) => Promise<Result<void>>
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
@@ -32,6 +35,11 @@ export type MuzeecApi = {
   getSettings: () => Promise<Result<AppSettings>>
   setSettings: (patch: Partial<AppSettings>) => Promise<Result<AppSettings>>
   setPlayerState: (state: PlayerState) => Promise<Result<boolean>>
+  windowMinimize: () => Promise<Result<void>>
+  windowToggleMaximize: () => Promise<Result<void>>
+  windowMaximized: () => Promise<Result<boolean>>
+  windowQuit: () => Promise<Result<void>>
+  onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
 }
 

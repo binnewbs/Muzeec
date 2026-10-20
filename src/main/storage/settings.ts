@@ -13,6 +13,8 @@ const DEFAULTS: AppSettings = {
   lyricsSources: ["lrc-red", "bini", "unison", "lrclib", "genius"],
   lyricsPreferSyllableTiming: false,
   lyricsOffsetMs: 0,
+  lastTrack: null,
+  lastPosition: 0,
 }
 
 const file = () => path.join(app.getPath("userData"), "settings.json")

@@ -2,21 +2,17 @@ import type { MediaItem } from "@shared/types"
 import { PlayIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useView } from "@/lib/store/view"
-import { playTracks, playTrack } from "@/player/controller"
+import { playTrack } from "@/player/controller"
 import { toTrack } from "@/lib/media"
 
-type Props = { item: MediaItem; queue?: MediaItem[]; fill?: boolean }
+type Props = { item: MediaItem; fill?: boolean }
 
-export function MediaCard({ item, queue, fill = false }: Props) {
+export function MediaCard({ item, fill = false }: Props) {
   const navigate = useView((state) => state.navigate)
 
   const activate = () => {
     if (item.kind === "track") {
-      const source = queue ?? [item]
-      const tracks = source.filter((entry) => entry.kind === "track").map(toTrack)
-      const index = tracks.findIndex((track) => track.videoId === item.id)
-      if (tracks.length > 1 && index >= 0) void playTracks(tracks, index)
-      else void playTrack(toTrack(item))
+      void playTrack(toTrack(item))
       return
     }
     if (item.kind === "album") navigate({ name: "album", id: item.id, title: item.title })

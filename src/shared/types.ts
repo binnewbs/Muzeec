@@ -25,6 +25,7 @@ export type MediaItem = {
   artists?: ArtistRef[]
   album?: { name: string; id: string | null } | null
   year?: string | null
+  musicVideoType?: string | null
 }
 
 export type Shelf = {
@@ -142,6 +143,8 @@ export type AppSettings = {
   lyricsSources: string[]
   lyricsPreferSyllableTiming: boolean
   lyricsOffsetMs: number
+  lastTrack: Track | null
+  lastPosition: number
 }
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }

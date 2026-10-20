@@ -1,10 +1,14 @@
-import { useSyncExternalStore, useState } from "react"
+import { useSyncExternalStore, useEffect, useState } from "react"
 import {
   CaptionsIcon,
+  GripVerticalIcon,
   HeartIcon,
   ListMusicIcon,
   PauseIcon,
   PlayIcon,
+  Repeat1Icon,
+  RepeatIcon,
+  ShuffleIcon,
   SkipBackIcon,
   SkipForwardIcon,
   Volume1Icon,
@@ -23,8 +27,19 @@ import { usePlayer } from "@/lib/store/player"
 import { useQueue } from "@/lib/store/queue"
 import { useSettings } from "@/lib/store/settings"
 import { engine } from "@/player/engine"
-import { next, previous, seek, setVolume, toggleLike, togglePlay } from "@/player/controller"
-import { playTracks } from "@/player/controller"
+import {
+  next,
+  previous,
+  seek,
+  setVolume,
+  toggleLike,
+  togglePlay,
+  playFromQueue,
+  playAutoplayTrack,
+  previewAutoplay,
+  cycleRepeat,
+  toggleShuffle,
+} from "@/player/controller"
 
 function usePosition(): number {
   return useSyncExternalStore(engine.subscribe, engine.getPosition, () => 0)
@@ -32,6 +47,8 @@ function usePosition(): number {
 
 export function PlayerBar() {
   const { current, status, error, duration, liked, volume, muted } = usePlayer()
+  const shuffle = useQueue((state) => state.shuffle)
+  const repeat = useQueue((state) => state.repeat)
   const position = usePosition()
   const update = useSettings((state) => state.update)
   const lyricsEnabled = useSettings((state) => state.settings.lyricsEnabled)
@@ -74,6 +91,16 @@ export function PlayerBar() {
 
         <div className="flex flex-col items-center gap-1">
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={shuffle ? "Turn shuffle off" : "Turn shuffle on"}
+              aria-pressed={shuffle}
+              className={cn(shuffle ? "text-primary" : "text-muted-foreground/60")}
+              onClick={toggleShuffle}
+            >
+              <ShuffleIcon />
+            </Button>
             <Button variant="ghost" size="icon-sm" aria-label="Previous track" onClick={previous}>
               <SkipBackIcon />
             </Button>
@@ -87,6 +114,16 @@ export function PlayerBar() {
             </Button>
             <Button variant="ghost" size="icon-sm" aria-label="Next track" onClick={next}>
               <SkipForwardIcon />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={repeat === "one" ? "Loop one" : repeat === "all" ? "Loop all" : "Loop off"}
+              aria-pressed={repeat !== "off"}
+              className={cn(repeat !== "off" ? "text-primary" : "text-muted-foreground/60")}
+              onClick={cycleRepeat}
+            >
+              {repeat === "one" ? <Repeat1Icon /> : <RepeatIcon />}
             </Button>
           </div>
           <div className="hidden w-full items-center gap-2 md:flex">
@@ -129,7 +166,7 @@ export function PlayerBar() {
             <SheetContent side="right">
               <SheetHeader>
                 <SheetTitle>Queue</SheetTitle>
-                <SheetDescription>Up next from your current selection.</SheetDescription>
+                <SheetDescription>Up next from your queue, followed by autoplay preview.</SheetDescription>
               </SheetHeader>
               <QueueList />
             </SheetContent>
@@ -175,36 +212,122 @@ export function PlayerBar() {
 }
 
 function QueueList() {
-  const { tracks, index } = useQueue()
-  if (!tracks.length) return <p className="px-6 text-sm text-muted-foreground">Queue is empty.</p>
+  const { tracks, autoplay, autoplaySeed, autoplayLoading, move } = useQueue()
+  const current = usePlayer((state) => state.current)
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [over, setOver] = useState<number | null>(null)
+
+  const seed = tracks.at(-1) ?? current
+  const seedId = seed?.videoId ?? null
+  useEffect(() => {
+    void previewAutoplay()
+  }, [seedId])
+
+  const seedIndex = seedId ? autoplay.findIndex((track) => track.videoId === seedId) : -1
+  const upcoming =
+    seedId && seedIndex >= 0
+      ? autoplay.slice(seedIndex + 1)
+      : autoplay.filter((track) => track.videoId !== seedId)
+  const loading = autoplayLoading && autoplaySeed === seedId
+  const afterQueue = tracks.length > 0
+
   return (
     <ScrollArea className="h-[calc(100vh-8rem)] px-3">
-      <div className="flex flex-col gap-1">
-        {tracks.map((track, i) => (
-          <div
-            key={`${track.videoId}-${i}`}
-            className={cn(
-              "flex flex-col gap-1 rounded-xl px-3 py-2 text-sm hover:bg-muted",
-              i === index && "bg-muted",
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <span className="w-4 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
-              <button
-                type="button"
-                onClick={() => void playTracks(tracks, i)}
-                className="truncate text-left font-medium underline-offset-2 hover:underline"
+      <div className="flex flex-col gap-5 pb-4">
+        <section className="flex flex-col gap-1">
+          <h3 className="px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">Up next</h3>
+          {tracks.length ? (
+            tracks.map((track, i) => (
+              <div
+                key={`${track.videoId}-${i}`}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.effectAllowed = "move"
+                  setDragging(i)
+                }}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = "move"
+                  setOver(i)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (dragging !== null) move(dragging, i)
+                  setDragging(null)
+                  setOver(null)
+                }}
+                onDragEnd={() => {
+                  setDragging(null)
+                  setOver(null)
+                }}
+                className={cn(
+                  "flex cursor-grab items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-muted active:cursor-grabbing",
+                  dragging === i && "opacity-50",
+                  over === i && dragging !== i && "ring-1 ring-ring",
+                )}
               >
-                {track.title}
-              </button>
-            </div>
-            <ArtistLinks
-              artists={track.artists}
-              fallback={track.subtitle}
-              className="truncate pl-6 text-xs text-muted-foreground"
-            />
-          </div>
-        ))}
+                <button
+                  type="button"
+                  aria-label={`Reorder ${track.title}`}
+                  title="Drag, or use arrow keys to reorder"
+                  className="shrink-0 rounded text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onKeyDown={(event) => {
+                    if (event.key === "ArrowUp") {
+                      event.preventDefault()
+                      move(i, i - 1)
+                    }
+                    if (event.key === "ArrowDown") {
+                      event.preventDefault()
+                      move(i, i + 1)
+                    }
+                  }}
+                >
+                  <GripVerticalIcon aria-hidden />
+                </button>
+                <span className="w-4 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => playFromQueue(i)}
+                  className="min-w-0 flex-1 truncate text-left font-medium underline-offset-2 hover:underline"
+                >
+                  {track.title}
+                </button>
+                <span className="max-w-40 truncate text-xs text-muted-foreground">
+                  <ArtistLinks artists={track.artists} fallback={track.subtitle} />
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="px-3 text-sm text-muted-foreground">No songs added. Autoplay continues when this song ends.</p>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-1">
+          <h3 className="px-3 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            {afterQueue ? "Autoplay after queue" : "Autoplay"}
+          </h3>
+          {loading ? (
+            <p className="px-3 text-sm text-muted-foreground">Loading similar songs…</p>
+          ) : upcoming.length ? (
+            upcoming.map((track, i) => (
+              <div key={`${track.videoId}-${i}`} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-muted">
+                <span className="w-4 text-xs tabular-nums text-muted-foreground">{i + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => playAutoplayTrack(track)}
+                  className="min-w-0 flex-1 truncate text-left font-medium underline-offset-2 hover:underline"
+                >
+                  {track.title}
+                </button>
+                <span className="max-w-40 truncate text-xs text-muted-foreground">
+                  <ArtistLinks artists={track.artists} fallback={track.subtitle} />
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="px-3 text-sm text-muted-foreground">Autoplay preview unavailable.</p>
+          )}
+        </section>
       </div>
     </ScrollArea>
   )

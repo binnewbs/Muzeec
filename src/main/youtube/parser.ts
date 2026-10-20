@@ -1,4 +1,4 @@
-import type { ArtistRef, BrowsePage, MediaItem, MediaKind, PageHeader, Shelf } from "../../shared/types.ts"
+import type { ArtistRef, BrowsePage, MediaItem, MediaKind, PageHeader, Shelf, Track } from "../../shared/types.ts"
 
 const ITEM_RENDERERS = new Set([
   "musicResponsiveListItemRenderer",
@@ -38,6 +38,19 @@ export function parseBrowsePage(json: any, fallbackTitle: string): BrowsePage {
   // Artist banners are not album art, so only reuse collection headers as covers.
   if (header && !findKey(json, "musicImmersiveHeaderRenderer")) fillFromHeader(parsed, header)
   return { title: pageTitle(json) ?? fallbackTitle, shelves: parsed, header }
+}
+
+/** Radio/autoplay queue from the `next` endpoint (`RDAMVM<videoId>`). */
+export function parseQueueTracks(json: any): Track[] {
+  const contents: any[] = findKey(json, "playlistPanelRenderer")?.contents ?? []
+  const tracks: Track[] = []
+  for (const entry of contents) {
+    const item = toItem(entry.playlistPanelVideoRenderer)
+    if (item?.kind === "track" && item.musicVideoType !== "MUSIC_VIDEO_TYPE_OMV") {
+      tracks.push({ ...item, kind: "track", videoId: item.id })
+    }
+  }
+  return tracks
 }
 
 function fillFromHeader(shelves: Shelf[], header: PageHeader): void {
@@ -147,6 +160,7 @@ function collectItems(renderer: any): MediaItem[] {
 
 function toItem(renderer: any): MediaItem | null {
   const videoId =
+    renderer.videoId ??
     renderer.playlistItemData?.videoId ??
     renderer.navigationEndpoint?.watchEndpoint?.videoId ??
     findKey(renderer, "watchEndpoint")?.videoId ??
@@ -166,18 +180,28 @@ function toItem(renderer: any): MediaItem | null {
     textOf(renderer.flexColumns?.[1]?.musicResponsiveListItemFlexColumnRenderer?.text) ??
     textOf(renderer.subtitle) ??
     textOf(renderer.subtitle2) ??
+    textOf(renderer.longBylineText) ??
+    textOf(renderer.shortBylineText) ??
     ""
   const subtitleParts = subtitleText.split(/\s*[•·]\s*/).filter(Boolean)
 
   const durationText =
     textOf(renderer.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text) ??
     textOf(renderer.fixedColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text) ??
+    textOf(renderer.lengthText) ??
     null
   const duration = parseDuration(durationText)
   const thumbnail =
     renderer.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
     renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.at(-1)?.url ??
     renderer.thumbnail?.thumbnails?.at(-1)?.url ??
+    null
+  const watchEndpoint =
+    renderer.navigationEndpoint?.watchEndpoint ??
+    findKey(renderer, "watchEndpoint")
+  const musicVideoType =
+    watchEndpoint?.watchEndpointMusicSupportedConfigs?.watchEndpointMusicConfig?.musicVideoType ??
+    findKey(renderer, "watchEndpointMusicConfig")?.musicVideoType ??
     null
 
   let kind: MediaKind = "track"
@@ -204,6 +228,7 @@ function toItem(renderer: any): MediaItem | null {
         : [],
     album: refs.album,
     year: subtitleParts.find((part) => /^\d{4}$/.test(part)) ?? null,
+    musicVideoType,
   }
 }
 
@@ -215,6 +240,8 @@ function navRefs(renderer: any): { artists: ArtistRef[]; album: { name: string; 
     ),
     ...(renderer.subtitle?.runs ?? []),
     ...(renderer.subtitle2?.runs ?? []),
+    ...(renderer.longBylineText?.runs ?? []),
+    ...(renderer.shortBylineText?.runs ?? []),
   ])
 }
 

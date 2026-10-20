@@ -44,13 +44,17 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" onClick={toggleSidebar} tooltip="Muzeec">
+            <SidebarMenuButton
+              size="lg"
+              onClick={toggleSidebar}
+              tooltip="Muzeec"
+              className="group-data-[collapsible=icon]:justify-center"
+            >
               <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <MusicIcon className="size-4" />
               </div>
-              <div className="flex flex-col gap-0.5 leading-none">
+              <div className="flex flex-col gap-0.5 leading-none group-data-[collapsible=icon]:hidden">
                 <span className="font-heading text-sm font-semibold">Muzeec</span>
-                <span className="text-xs text-muted-foreground">YouTube Music</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -97,7 +101,7 @@ export function AppSidebar() {
                 <DropdownMenuTrigger
                   render={<SidebarMenuButton size="lg" aria-label={state.user.name ?? "Account"} />}
                 >
-                  <Avatar className="size-7">
+                  <Avatar className="size-8">
                     <AvatarImage src={state.user.avatar ?? undefined} alt="" />
                     <AvatarFallback>{(state.user.name ?? "Y").slice(0, 1).toUpperCase()}</AvatarFallback>
                   </Avatar>

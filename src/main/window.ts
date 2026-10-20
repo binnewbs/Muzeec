@@ -9,12 +9,12 @@ const isDev = !process.env.NODE_ENV || process.env.NODE_ENV === "development"
 export function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
-    height: 820,
+    height: 760,
     minWidth: 900,
     minHeight: 600,
     show: false,
+    frame: false,
     backgroundColor: "#0a0a0a",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       partition: YT_PARTITION,
       preload: path.join(import.meta.dirname, "../preload/index.cjs"),
@@ -28,6 +28,11 @@ export function createMainWindow(): BrowserWindow {
   })
 
   win.once("ready-to-show", () => win.show())
+  const sendMaximized = () => {
+    if (!win.isDestroyed()) win.webContents.send("sys:windowMaximized", win.isMaximized())
+  }
+  win.on("maximize", sendMaximized)
+  win.on("unmaximize", sendMaximized)
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\//.test(url)) void shell.openExternal(url)
     return { action: "deny" }

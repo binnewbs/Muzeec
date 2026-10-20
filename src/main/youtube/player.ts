@@ -5,6 +5,7 @@ import { VISIONOS_UA, mediaHeadersFor } from "./session.ts"
 import { innertube } from "./innertube.ts"
 import { getClientInfo } from "./auth.ts"
 import { decipher } from "./decipher.ts"
+import { parseBrowsePage } from "./parser.ts"
 
 type Client = {
   name: string
@@ -198,6 +199,81 @@ export async function probe(url: string): Promise<ProbeResult> {
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: `probe error: ${error instanceof Error ? error.message : String(error)}` }
+  }
+}
+
+const SONGS_PARAM = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
+
+/** Resolve an official music video to its audio-track counterpart when possible. */
+export async function resolveMusicTrack(videoId: string): Promise<string> {
+  const cached = cacheGet<string>(`musicTrack:${videoId}`)
+  if (cached) return cached
+
+  let response: any
+  try {
+    const info = await getClientInfo()
+    response = await innertube(
+      "player",
+      {
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+        playbackContext: {
+          contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
+        },
+      },
+      { signed: false, client: CLIENTS[0], retries: 1 },
+    )
+  } catch (webError) {
+    try {
+      const info = await getClientInfo()
+      response = await innertube(
+        "player",
+        {
+          videoId,
+          contentCheckOk: true,
+          racyCheckOk: true,
+          playbackContext: {
+            contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
+          },
+        },
+        { signed: false, client: CLIENTS[3], retries: 1 },
+      )
+    } catch {
+      console.log("[resolveMusicTrack] player failed", webError instanceof Error ? webError.message : String(webError))
+      cacheSet(`musicTrack:${videoId}`, videoId, 60 * 60 * 1000)
+      return videoId
+    }
+  }
+
+  const details = response?.videoDetails ?? {}
+  const type = details.musicVideoType
+  if (type !== "MUSIC_VIDEO_TYPE_OMV") {
+    cacheSet(`musicTrack:${videoId}`, videoId, 24 * 60 * 60 * 1000)
+    return videoId
+  }
+
+  const title = typeof details.title === "string" ? details.title : ""
+  const author = typeof details.author === "string" ? details.author.replace(/\s*-\s*Topic$/i, "") : ""
+  const query = `${title} ${author}`.trim()
+  if (!query) {
+    cacheSet(`musicTrack:${videoId}`, videoId, 60 * 60 * 1000)
+    return videoId
+  }
+
+  try {
+    const searchJson = await innertube("search", { query, params: SONGS_PARAM }, { signed: false })
+    const page = parseBrowsePage(searchJson, query)
+    const candidates = page.shelves.flatMap((shelf) => shelf.items).filter((item) => item.kind === "track")
+    const audioTrack = candidates.find(
+      (item) => item.musicVideoType === "MUSIC_VIDEO_TYPE_ATV" && item.id !== videoId,
+    )
+    const resolved = audioTrack?.id ?? videoId
+    cacheSet(`musicTrack:${videoId}`, resolved, 24 * 60 * 60 * 1000)
+    return resolved
+  } catch {
+    cacheSet(`musicTrack:${videoId}`, videoId, 60 * 60 * 1000)
+    return videoId
   }
 }
 
