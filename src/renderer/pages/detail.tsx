@@ -1,13 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from "react"
-import { ArrowLeftIcon, ArrowUpDownIcon, PlayIcon, TrashIcon } from "lucide-react"
+import { ArrowLeftIcon, ArrowUpDownIcon, PlayIcon, PlusIcon, TrashIcon } from "lucide-react"
 import type { BrowseChunk, BrowsePage, MediaItem, Track } from "@shared/types"
 import { toast } from "sonner"
 import { api, errorMessage, unwrap } from "@/lib/ipc"
 import { useIpcQuery } from "@/lib/query"
 import { tracksOf } from "@/lib/media"
+import { invalidateLibrary, useLibraryRevision } from "@/lib/store/library"
 import { useView } from "@/lib/store/view"
 import { playTracks } from "@/player/controller"
 import { Button } from "@/components/ui/button"
+import { AddSongsDialog } from "@/components/add-songs-dialog"
 import { ArtistLinks } from "@/components/artist-links"
 import { ShelfSection } from "@/components/shelf-section"
 import {
@@ -41,13 +43,15 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
   const back = useView((state) => state.back)
   const browseId = id.startsWith("VL") || kind !== "playlist" ? id : `VL${id}`
   const isPlaylist = kind === "playlist"
+  const revision = useLibraryRevision((state) => state.revision)
   const { data, error, loading, reload, setData } = useIpcQuery(
-    `browse:${browseId}`,
+    `browse:${browseId}:${revision}`,
     () => unwrap(api.browse({ browseId })),
     { staleTime: 2 * 60 * 1000 },
   )
   const [sortBy, setSortBy] = useState<"added" | "title">("added")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const [addingSongs, setAddingSongs] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingAll, setLoadingAll] = useState(false)
   const loadingMoreRef = useRef(false)
@@ -158,6 +162,7 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
     if (!window.confirm("Delete this playlist from your account?")) return
     try {
       await unwrap(api.playlistDelete({ playlistId: id }))
+      invalidateLibrary()
       toast.success("Playlist deleted")
       back()
     } catch (removeError) {
@@ -233,61 +238,84 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
             ) : null}
             <span className="text-sm text-muted-foreground">
               {data.header?.subtitle ||
-                (tracks.length ? `${tracks.length}${hasContinuation ? "+" : ""} songs` : `${items.length} items`)}
+                (tracks.length
+                  ? `${tracks.length}${hasContinuation ? "+" : ""} songs`
+                  : isPlaylist
+                    ? "0 songs"
+                    : `${items.length} items`)}
             </span>
-            {tracks.length ? (
-              <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
+              {tracks.length ? (
                 <Button className="w-fit" disabled={loadingAll} onClick={playAll}>
                   <PlayIcon data-icon="inline-start" />
                   {loadingAll ? "Loading…" : "Play all"}
                 </Button>
-                {kind === "playlist" ? (
-                  <>
-                    <DropdownMenu modal={false}>
-                      <DropdownMenuTrigger render={<Button variant="ghost" className="w-fit" />}>
-                        <ArrowUpDownIcon data-icon="inline-start" />
-                        Sort
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-56">
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-                          <DropdownMenuRadioGroup
-                            value={sortBy}
-                            onValueChange={(value) => setSortBy(value as "added" | "title")}
-                          >
-                            <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuGroup>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuGroup>
-                          <DropdownMenuLabel>Order</DropdownMenuLabel>
-                          <DropdownMenuRadioGroup
-                            value={sortDir}
-                            onValueChange={(value) => setSortDir(value as "asc" | "desc")}
-                          >
-                            <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
-                            <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
-                          </DropdownMenuRadioGroup>
-                        </DropdownMenuGroup>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button variant="ghost" className="w-fit" onClick={() => void remove()}>
-                      <TrashIcon data-icon="inline-start" />
-                      Delete
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-            ) : kind === "playlist" ? (
-              <Button variant="ghost" className="w-fit" onClick={() => void remove()}>
-                <TrashIcon data-icon="inline-start" />
-                Delete playlist
-              </Button>
-            ) : null}
+              ) : null}
+              {isPlaylist ? (
+                <Button
+                  variant={tracks.length ? "ghost" : "default"}
+                  className="w-fit"
+                  onClick={() => setAddingSongs(true)}
+                >
+                  <PlusIcon data-icon="inline-start" />
+                  Add songs
+                </Button>
+              ) : null}
+              {tracks.length && isPlaylist ? (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger render={<Button variant="ghost" className="w-fit" />}>
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    Sort
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortBy}
+                        onValueChange={(value) => setSortBy(value as "added" | "title")}
+                      >
+                        <DropdownMenuRadioItem value="added">Date added</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Order</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortDir}
+                        onValueChange={(value) => setSortDir(value as "asc" | "desc")}
+                      >
+                        <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {isPlaylist ? (
+                <Button variant="ghost" className="w-fit" onClick={() => void remove()}>
+                  <TrashIcon data-icon="inline-start" />
+                  Delete
+                </Button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
+
+      {isPlaylist && !tracks.length ? (
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed px-6 py-14 text-center">
+          <PlusIcon className="size-6 text-muted-foreground" />
+          <div className="flex flex-col gap-1">
+            <p className="font-heading text-lg font-medium">This playlist is empty</p>
+            <p className="text-sm text-muted-foreground">Find songs and add them to “{displayTitle}”.</p>
+          </div>
+          <Button onClick={() => setAddingSongs(true)}>
+            <PlusIcon data-icon="inline-start" />
+            Add songs
+          </Button>
+        </div>
+      ) : null}
 
       {trackShelves.map(({ shelf, index }) => {
         const shelfItems = sortTracks(shelf.items)
@@ -315,6 +343,14 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
           hasMore={hasContinuation}
           loadingMore={loadingMore}
           onLoadMore={loadMore}
+        />
+      ) : null}
+      {isPlaylist ? (
+        <AddSongsDialog
+          playlistId={id}
+          playlistTitle={displayTitle}
+          open={addingSongs}
+          onOpenChange={setAddingSongs}
         />
       ) : null}
     </div>

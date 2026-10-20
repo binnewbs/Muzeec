@@ -48,8 +48,14 @@ async function loadBrowsePage(id: string): Promise<BrowsePage> {
     continuation: paged ? feed.continuation : null,
     trackListIndex: feed.trackListIndex,
   }
-  if (page.shelves.length === 0) throw new Error("This page returned no playable content")
-  return cacheSet(`browse:${id}`, page, paged ? COLLECTION_TTL_MS : BROWSE_TTL_MS, pageCost(page))
+  // Playlists and albums can legitimately be empty (and YouTube may not return
+  // a header for a brand-new playlist yet). Keep the page so the renderer can
+  // show an empty state with "Add songs" instead of an error.
+  if (page.shelves.length === 0 && !paged) {
+    throw new Error("This page returned no playable content")
+  }
+  const ttl = page.shelves.length === 0 ? BROWSE_TTL_MS : paged ? COLLECTION_TTL_MS : BROWSE_TTL_MS
+  return cacheSet(`browse:${id}`, page, ttl, pageCost(page))
 }
 
 /** Next slice of a paged album/playlist. The renderer appends these as the user scrolls. */

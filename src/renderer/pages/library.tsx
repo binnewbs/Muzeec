@@ -13,7 +13,6 @@ export default function LibraryPage() {
   const loading = useAuth((state) => state.loading)
   const navigate = useView((state) => state.navigate)
   const [creating, setCreating] = useState(false)
-  const [version, setVersion] = useState(0)
 
   if (!signedIn) {
     return (
@@ -44,11 +43,11 @@ export default function LibraryPage() {
           New playlist
         </Button>
       </div>
-      <BrowseView browseId="FEmusic_library_landing" title="Library" grid reloadKey={version} />
+      <BrowseView browseId="FEmusic_library_landing" title="Library" grid />
       <CreatePlaylistDialog
         open={creating}
         onOpenChange={setCreating}
-        onCreated={() => setVersion((value) => value + 1)}
+        onCreated={(id, title) => navigate({ name: "playlist", id, title })}
       />
     </div>
   )

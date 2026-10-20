@@ -1,5 +1,6 @@
 import { useIpcQuery } from "@/lib/query"
 import { api, unwrap } from "@/lib/ipc"
+import { useLibraryRevision } from "@/lib/store/library"
 import { ShelfSection } from "@/components/shelf-section"
 import { PageEmpty, PageError, PageLoading } from "@/components/page-states"
 
@@ -9,15 +10,15 @@ type Props = {
   enabled?: boolean
   grid?: boolean
   emptyAction?: React.ReactNode
-  /** Bump to refetch the page (e.g. after creating a playlist). */
-  reloadKey?: number
 }
 
-export function BrowseView({ browseId, title, enabled = true, grid = false, emptyAction, reloadKey = 0 }: Props) {
-  const queryKey = reloadKey ? `browse:${browseId}:${reloadKey}` : `browse:${browseId}`
-  const { data, error, loading, reload } = useIpcQuery(queryKey, () => unwrap(api.browse({ browseId })), {
-    enabled,
-  })
+export function BrowseView({ browseId, title, enabled = true, grid = false, emptyAction }: Props) {
+  const revision = useLibraryRevision((state) => state.revision)
+  const { data, error, loading, reload } = useIpcQuery(
+    `browse:${browseId}:${revision}`,
+    () => unwrap(api.browse({ browseId })),
+    { enabled },
+  )
 
   if (loading) return <PageLoading />
   if (error) return <PageError message={error} retry={reload} />

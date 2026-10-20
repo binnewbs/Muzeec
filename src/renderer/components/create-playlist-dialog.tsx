@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 import { api, errorMessage, unwrap } from "@/lib/ipc"
+import { invalidateLibrary } from "@/lib/store/library"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -41,6 +42,7 @@ export function CreatePlaylistDialog({ open, onOpenChange, onCreated }: Props) {
     setError(null)
     try {
       const id = await unwrap(api.playlistCreate({ title: value }))
+      invalidateLibrary()
       toast.success(`Created “${value}”`)
       onCreated?.(id, value)
       onOpenChange(false)

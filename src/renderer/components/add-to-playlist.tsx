@@ -3,6 +3,7 @@ import type { MediaItem } from "@shared/types"
 import { PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 import { api, errorMessage, unwrap } from "@/lib/ipc"
+import { invalidateLibrary } from "@/lib/store/library"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -48,6 +49,7 @@ export function AddToPlaylistDialog({ videoId, title, open, onOpenChange }: Prop
     setBusy(true)
     try {
       await unwrap(api.playlistAdd({ playlistId, videoId }))
+      invalidateLibrary()
       toast.success(`Added to playlist`)
       onOpenChange(false)
     } catch (error) {
@@ -63,6 +65,7 @@ export function AddToPlaylistDialog({ videoId, title, open, onOpenChange }: Prop
     setBusy(true)
     try {
       await unwrap(api.playlistCreate({ title: value, videoId }))
+      invalidateLibrary()
       toast.success(`Created “${value}”`)
       setName("")
       onOpenChange(false)

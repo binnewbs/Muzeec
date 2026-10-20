@@ -4,6 +4,7 @@ import { LibraryIcon, ListMusicIcon, PinIcon, PinOffIcon } from "lucide-react"
 import { api, unwrap } from "@/lib/ipc"
 import { useIpcQuery } from "@/lib/query"
 import { useAuth } from "@/lib/store/auth"
+import { useLibraryRevision } from "@/lib/store/library"
 import { useSettings } from "@/lib/store/settings"
 import { useView } from "@/lib/store/view"
 import {
@@ -41,12 +42,13 @@ export function PinnedPlaylists() {
   const update = useSettings((state) => state.update)
   const navigate = useView((state) => state.navigate)
   const current = useView((state) => state.view)
+  const revision = useLibraryRevision((state) => state.revision)
   const [open, setOpen] = useState(false)
 
   // Lazy: the sidebar reads pinned playlists from settings, so opening the
   // dropdown is the only moment this list is fetched.
   const { data, error, loading } = useIpcQuery(
-    `browse:${PLAYLISTS_BROWSE_ID}`,
+    `browse:${PLAYLISTS_BROWSE_ID}:${revision}`,
     () => unwrap(api.browse({ browseId: PLAYLISTS_BROWSE_ID })),
     { enabled: signedIn && open },
   )
