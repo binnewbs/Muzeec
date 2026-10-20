@@ -11,6 +11,15 @@ import { playTracks } from "@/player/controller"
 import { Button } from "@/components/ui/button"
 import { AddSongsDialog } from "@/components/add-songs-dialog"
 import { ArtistLinks } from "@/components/artist-links"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Spinner } from "@/components/ui/spinner"
 import { ShelfSection } from "@/components/shelf-section"
 import {
   DropdownMenu,
@@ -52,6 +61,8 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
   const [sortBy, setSortBy] = useState<"added" | "title">("added")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
   const [addingSongs, setAddingSongs] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingAll, setLoadingAll] = useState(false)
   const loadingMoreRef = useRef(false)
@@ -158,15 +169,21 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
   const displayTitle = isBrowseId(data.title) ? (safeTitle || "Untitled") : (data.title || safeTitle || "Untitled")
   const hasContinuation = Boolean(data.continuation)
 
-  const remove = async () => {
-    if (!window.confirm("Delete this playlist from your account?")) return
+  const remove = () => setConfirmingDelete(true)
+
+  const confirmRemove = async () => {
+    if (deleting) return
+    setDeleting(true)
     try {
       await unwrap(api.playlistDelete({ playlistId: id }))
       invalidateLibrary()
       toast.success("Playlist deleted")
+      setConfirmingDelete(false)
       back()
     } catch (removeError) {
       toast.error(errorMessage(removeError))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -352,6 +369,27 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
           open={addingSongs}
           onOpenChange={setAddingSongs}
         />
+      ) : null}
+      {isPlaylist ? (
+        <Dialog open={confirmingDelete} onOpenChange={(open) => !deleting && setConfirmingDelete(open)}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Delete playlist?</DialogTitle>
+              <DialogDescription>
+                “{displayTitle}” will be removed from your YouTube Music library. This cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" disabled={deleting} onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" disabled={deleting} onClick={() => void confirmRemove()}>
+                {deleting ? <Spinner data-icon="inline-start" /> : <TrashIcon data-icon="inline-start" />}
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   )

@@ -100,7 +100,7 @@ export function AddSongsDialog({ playlistId, playlistTitle, open, onOpenChange }
           <DialogTitle>Add songs</DialogTitle>
           <DialogDescription className="truncate">Search and add songs to “{playlistTitle}”.</DialogDescription>
         </DialogHeader>
-        <InputGroup>
+        <InputGroup className="min-w-0">
           <InputGroupAddon>
             <SearchIcon />
           </InputGroupAddon>
@@ -112,7 +112,7 @@ export function AddSongsDialog({ playlistId, playlistTitle, open, onOpenChange }
             aria-label="Search songs to add"
           />
         </InputGroup>
-        <ScrollArea className="max-h-80">
+        <ScrollArea className="max-h-80 min-w-0">
           {!active ? (
             <p className="py-6 text-center text-sm text-muted-foreground">Type at least two characters.</p>
           ) : loading ? (
@@ -128,7 +128,7 @@ export function AddSongsDialog({ playlistId, playlistTitle, open, onOpenChange }
                 return (
                   <div
                     key={track.videoId}
-                    className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50"
+                    className="flex min-w-0 items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-muted/50"
                   >
                     {track.thumbnail ? (
                       <img
