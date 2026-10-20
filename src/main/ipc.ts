@@ -310,6 +310,7 @@ export function registerIpc(): void {
       next.lyricsOffsetMs = Math.max(-5000, Math.min(5000, Math.round(input.lyricsOffsetMs)))
       lyricsChanged = true
     }
+    if (typeof input.lyricsRomanize === "boolean") next.lyricsRomanize = input.lyricsRomanize
     if (typeof input.lastPosition === "number" && Number.isFinite(input.lastPosition)) {
       next.lastPosition = Math.max(0, input.lastPosition)
     }

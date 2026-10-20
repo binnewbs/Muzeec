@@ -1,5 +1,7 @@
-import { CompassIcon } from "lucide-react"
+import { useState } from "react"
+import { CompassIcon, PlusIcon } from "lucide-react"
 import { BrowseView } from "@/components/browse-view"
+import { CreatePlaylistDialog } from "@/components/create-playlist-dialog"
 import { PageEmpty } from "@/components/page-states"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/lib/store/auth"
@@ -10,6 +12,8 @@ export default function LibraryPage() {
   const login = useAuth((state) => state.login)
   const loading = useAuth((state) => state.loading)
   const navigate = useView((state) => state.navigate)
+  const [creating, setCreating] = useState(false)
+  const [version, setVersion] = useState(0)
 
   if (!signedIn) {
     return (
@@ -35,8 +39,17 @@ export default function LibraryPage() {
       <div className="flex items-center gap-2 text-muted-foreground">
         <CompassIcon className="size-4" />
         <span className="text-sm">Live from your account</span>
+        <Button size="sm" variant="outline" className="ml-auto" onClick={() => setCreating(true)}>
+          <PlusIcon data-icon="inline-start" />
+          New playlist
+        </Button>
       </div>
-      <BrowseView browseId="FEmusic_library_landing" title="Library" grid />
+      <BrowseView browseId="FEmusic_library_landing" title="Library" grid reloadKey={version} />
+      <CreatePlaylistDialog
+        open={creating}
+        onOpenChange={setCreating}
+        onCreated={() => setVersion((value) => value + 1)}
+      />
     </div>
   )
 }

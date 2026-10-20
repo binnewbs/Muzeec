@@ -1,4 +1,4 @@
-import { CompassIcon, HomeIcon, LibraryIcon, LogOutIcon, SearchIcon, SettingsIcon } from "lucide-react"
+import { CompassIcon, HistoryIcon, HomeIcon, LibraryIcon, LogOutIcon, SearchIcon, SettingsIcon } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +32,7 @@ const NAV = [
   { view: { name: "home" } as View, label: "Home", icon: HomeIcon },
   { view: { name: "explore" } as View, label: "Explore", icon: CompassIcon },
   { view: { name: "library" } as View, label: "Library", icon: LibraryIcon },
+  { view: { name: "history" } as View, label: "History", icon: HistoryIcon },
   { view: { name: "search" } as View, label: "Search", icon: SearchIcon },
 ]
 

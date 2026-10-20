@@ -18,6 +18,7 @@ import { initPlayer } from "@/player/controller"
 const HomePage = lazy(() => import("@/pages/home"))
 const ExplorePage = lazy(() => import("@/pages/explore"))
 const LibraryPage = lazy(() => import("@/pages/library"))
+const HistoryPage = lazy(() => import("@/pages/history"))
 const SearchPage = lazy(() => import("@/pages/search"))
 const DetailPage = lazy(() => import("@/pages/detail"))
 const ArtistPage = lazy(() => import("@/pages/artist"))
@@ -80,6 +81,8 @@ export default function App() {
                     <ExplorePage />
                   ) : view.name === "library" ? (
                     <LibraryPage />
+                  ) : view.name === "history" ? (
+                    <HistoryPage />
                   ) : view.name === "search" ? (
                     <SearchPage key={view.query ?? "empty"} initialQuery={view.query} />
                   ) : view.name === "settings" ? (

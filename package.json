@@ -8,7 +8,9 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "node scripts/sync-kuromoji.mjs",
     "dev": "electron-vite dev",
+    "prebuild": "node scripts/sync-kuromoji.mjs",
     "build": "tsc --noEmit && electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
@@ -18,6 +20,8 @@
     "dist:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
+    "pinyin-pro": "^3.29.5",
+    "wanakana": "^5.3.1",
     "youtubei.js": "^18.2.0"
   },
   "devDependencies": {
@@ -35,6 +39,7 @@
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^6.0.0",
+    "kuromoji": "^0.1.2",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

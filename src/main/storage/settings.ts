@@ -13,6 +13,7 @@ const DEFAULTS: AppSettings = {
   lyricsSources: ["lrc-red", "bini", "unison", "lrclib", "genius"],
   lyricsPreferSyllableTiming: false,
   lyricsOffsetMs: 0,
+  lyricsRomanize: false,
   lastTrack: null,
   lastPosition: 0,
   searchHistory: [],

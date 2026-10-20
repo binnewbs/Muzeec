@@ -9,10 +9,13 @@ type Props = {
   enabled?: boolean
   grid?: boolean
   emptyAction?: React.ReactNode
+  /** Bump to refetch the page (e.g. after creating a playlist). */
+  reloadKey?: number
 }
 
-export function BrowseView({ browseId, title, enabled = true, grid = false, emptyAction }: Props) {
-  const { data, error, loading, reload } = useIpcQuery(`browse:${browseId}`, () => unwrap(api.browse({ browseId })), {
+export function BrowseView({ browseId, title, enabled = true, grid = false, emptyAction, reloadKey = 0 }: Props) {
+  const queryKey = reloadKey ? `browse:${browseId}:${reloadKey}` : `browse:${browseId}`
+  const { data, error, loading, reload } = useIpcQuery(queryKey, () => unwrap(api.browse({ browseId })), {
     enabled,
   })
 

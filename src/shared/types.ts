@@ -159,6 +159,7 @@ export type AppSettings = {
   lyricsSources: string[]
   lyricsPreferSyllableTiming: boolean
   lyricsOffsetMs: number
+  lyricsRomanize: boolean
   lastTrack: Track | null
   lastPosition: number
   searchHistory: string[]

@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { LyricLine, LyricWord, LyricsResult } from "@shared/types"
-import { RefreshCwIcon } from "lucide-react"
+import { LanguagesIcon, RefreshCwIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -9,6 +9,8 @@ import { api, errorMessage, unwrap } from "@/lib/ipc"
 import { usePlayer } from "@/lib/store/player"
 import { useSettings } from "@/lib/store/settings"
 import { engine } from "@/player/engine"
+
+const CJK = /[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7a3]/
 
 export function LyricsPanel() {
   const current = usePlayer((state) => state.current)
@@ -23,6 +25,35 @@ export function LyricsPanel() {
   const rows = useRef<Array<HTMLDivElement | null>>([])
   const sourcesKey = settings.lyricsSources.join(",")
   const wordSynced = Boolean(result?.wordSynced)
+  const romanize = settings.lyricsRomanize
+  const [romanizedLines, setRomanizedLines] = useState<string[] | null>(null)
+  const [romanizing, setRomanizing] = useState(false)
+  const hasCjk = useMemo(() => (result?.lines ?? []).some((line) => CJK.test(line.text)), [result])
+
+  // Keep the romanizer (and the Japanese dictionary) out of the main bundle until they are needed.
+  useEffect(() => {
+    if (!romanize || !result) {
+      setRomanizedLines(null)
+      setRomanizing(false)
+      return
+    }
+    let alive = true
+    setRomanizing(true)
+    void import("@/lib/romanize")
+      .then((module) => module.romanizeLines(result.lines.map((line) => line.text)))
+      .then((lines) => {
+        if (alive) setRomanizedLines(lines)
+      })
+      .catch(() => {
+        if (alive) setRomanizedLines(null)
+      })
+      .finally(() => {
+        if (alive) setRomanizing(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [romanize, result])
 
   // Line highlighting only needs the engine's 4 Hz ticker, not a render loop.
   useEffect(() => {
@@ -131,6 +162,19 @@ export function LyricsPanel() {
         {result ? (
           <Badge variant="outline">{result.wordSynced ? "Word sync" : result.synced ? "Line sync" : "Plain"}</Badge>
         ) : null}
+        {hasCjk ? (
+          <Button
+            variant={romanize ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={romanize}
+            aria-label="Romanize lyrics"
+            disabled={romanizing}
+            onClick={() => void update({ lyricsRomanize: !romanize })}
+          >
+            {romanizing ? <Spinner data-icon="inline-start" /> : <LanguagesIcon data-icon="inline-start" />}
+            Romanize
+          </Button>
+        ) : null}
         <div className="ml-auto flex items-center gap-1">
           <Button variant="ghost" size="sm" aria-label="Lyrics earlier" onClick={() => nudge(-500)}>
             −0.5s
@@ -174,6 +218,7 @@ export function LyricsPanel() {
                   position={index === activeIndex ? position + offset : 0}
                   onSeek={seekTo}
                   registerRow={registerRow}
+                  romanized={romanizedLines?.[index] ?? null}
                 />
               ))}
             </div>
@@ -199,6 +244,7 @@ const LyricLineRow = memo(function LyricLineRow({
   position,
   onSeek,
   registerRow,
+  romanized,
 }: {
   index: number
   line: LyricLine
@@ -207,12 +253,13 @@ const LyricLineRow = memo(function LyricLineRow({
   position: number
   onSeek: (line: LyricLine) => void
   registerRow: (index: number, node: HTMLDivElement | null) => void
+  romanized: string | null
 }) {
   // Stable ref callback: keeps parent re-renders from detaching/reattaching every row.
   const setRef = useCallback((node: HTMLDivElement | null) => registerRow(index, node), [registerRow, index])
   return (
     <div ref={setRef}>
-      <LyricRow line={line} active={active} plain={plain} position={position} onSeek={onSeek} />
+      <LyricRow line={line} active={active} plain={plain} position={position} onSeek={onSeek} romanized={romanized} />
     </div>
   )
 })
@@ -223,14 +270,17 @@ const LyricRow = memo(function LyricRow({
   plain,
   position,
   onSeek,
+  romanized,
 }: {
   line: LyricLine
   active: boolean
   plain: boolean
   position: number
   onSeek: (line: LyricLine) => void
+  romanized: string | null
 }) {
   const clickable = line.timeMs > 0
+  const showRomanized = Boolean(romanized && romanized !== line.text)
   return (
     <div
       className={`flex flex-col gap-1 rounded-lg px-2 py-1.5 transition-colors ${
@@ -257,6 +307,11 @@ const LyricRow = memo(function LyricRow({
           <span>{line.text}</span>
         )}
       </div>
+      {showRomanized ? (
+        <div className={`text-sm leading-snug ${active ? "text-muted-foreground" : "text-muted-foreground/45"}`}>
+          {romanized}
+        </div>
+      ) : null}
       {line.background ? (
         <div
           className={`flex flex-wrap gap-x-[0.28em] text-sm leading-snug ${
