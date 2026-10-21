@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
 import type { AppSettings, BrowseChunk, BrowsePage, PinnedPlaylist, PlayerState, Rating, Track } from "../shared/types.ts"
 import { normalizeSearchHistory } from "../shared/search-history.ts"
-import { authState, logout } from "./youtube/auth.ts"
+import { authState, getScope, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
 import { innertube } from "./youtube/innertube.ts"
 import { parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
@@ -12,6 +12,7 @@ import { flushSettings, getSettings, updateSettings } from "./storage/settings.t
 import { cacheClear, cacheGet, cacheSet, cacheTrim } from "./storage/cache.ts"
 import { lyricsProviderInfo, lookupLyrics } from "./lyrics/engine.ts"
 import { updateTray } from "./tray.ts"
+import { importSpotifyPlaylist } from "./spotify/importer.ts"
 
 function text(value: unknown, name: string, max = 2048): string {
   if (typeof value !== "string" || !value.length || value.length > max) throw new Error(`Invalid ${name}`)
@@ -38,6 +39,7 @@ const CHUNK_TTL_MS = 10 * 60 * 1000
 
 const browseInflight = new Map<string, Promise<BrowsePage>>()
 const chunkInflight = new Map<string, Promise<BrowseChunk>>()
+const spotifyJobs = new Map<string, AbortController>()
 
 async function loadBrowsePage(id: string): Promise<BrowsePage> {
   const json = await innertube("browse", { browseId: id })
@@ -225,6 +227,35 @@ export function registerIpc(): void {
     const { playlistId } = record(input)
     await deletePlaylist(text(playlistId, "playlistId", 200))
     cacheClear("browse:")
+  })
+
+  ipcMain.handle("spotify:import", async (event, input) => {
+    const { url, jobId } = record(input)
+    const playlistUrl = text(url, "url", 2048)
+    const job = text(jobId, "jobId", 100)
+    if (!getScope()) throw new Error("Sign in to YouTube Music to import a playlist.")
+    if (spotifyJobs.has(job)) throw new Error("An import is already running.")
+
+    const controller = new AbortController()
+    spotifyJobs.set(job, controller)
+    try {
+      return await importSpotifyPlaylist(playlistUrl, {
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send("spotify:progress", { ...progress, jobId: job })
+          }
+        },
+      })
+    } finally {
+      spotifyJobs.delete(job)
+    }
+  })
+
+  ipcMain.handle("spotify:cancel", (_event, input) => {
+    const { jobId } = record(input)
+    spotifyJobs.get(text(jobId, "jobId", 100))?.abort()
+    return true
   })
 
   ipcMain.handle("yt:subscribe", async (_event, input) => {

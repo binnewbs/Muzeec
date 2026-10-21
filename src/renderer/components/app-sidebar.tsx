@@ -1,4 +1,15 @@
-import { CompassIcon, HistoryIcon, HomeIcon, LibraryIcon, LogOutIcon, SearchIcon, SettingsIcon } from "lucide-react"
+import { useEffect, useState } from "react"
+import {
+  CompassIcon,
+  HistoryIcon,
+  HomeIcon,
+  LibraryIcon,
+  LogOutIcon,
+  MoonIcon,
+  MoreHorizontalIcon,
+  SearchIcon,
+  SettingsIcon,
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -15,6 +26,7 @@ import {
 } from "@/components/ui/sidebar"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuGroup,
@@ -23,9 +35,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Switch } from "@/components/ui/switch"
 import { Logo } from "@/components/logo"
 import { PinnedPlaylists } from "@/components/pinned-playlists"
 import { useAuth } from "@/lib/store/auth"
+import { useSettings } from "@/lib/store/settings"
 import { useView, type View } from "@/lib/store/view"
 
 const NAV = [
@@ -41,6 +55,22 @@ export function AppSidebar() {
   const current = useView((state) => state.view)
   const { toggleSidebar } = useSidebar()
   const { state, login, logout, loading } = useAuth()
+  const theme = useSettings((value) => value.settings.theme)
+  const updateSettings = useSettings((value) => value.update)
+  const [systemDark, setSystemDark] = useState(() =>
+    window.matchMedia("(prefers-color-scheme: dark)").matches,
+  )
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)")
+    const sync = () => setSystemDark(media.matches)
+    sync()
+    media.addEventListener("change", sync)
+    return () => media.removeEventListener("change", sync)
+  }, [])
+
+  const isDark = theme === "dark" || (theme === "system" && systemDark)
+  const account = state.signedIn ? state.user : null
 
   return (
     <Sidebar collapsible="icon">
@@ -89,35 +119,57 @@ export function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          {!account ? (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={current.name === "settings"}
+                tooltip="Settings"
+                onClick={() => navigate({ name: "settings" })}
+              >
+                <SettingsIcon />
+                <span>Settings</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ) : null}
           <SidebarMenuItem>
-            <SidebarMenuButton
-              isActive={current.name === "settings"}
-              tooltip="Settings"
-              onClick={() => navigate({ name: "settings" })}
-            >
-              <SettingsIcon />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            {state.signedIn && state.user ? (
+            {account ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
-                  render={<SidebarMenuButton size="lg" aria-label={state.user.name ?? "Account"} />}
+                  render={<SidebarMenuButton size="lg" aria-label={account.name ?? "Account"} />}
                 >
                   <Avatar className="size-8">
-                    <AvatarImage src={state.user.avatar ?? undefined} alt="" />
-                    <AvatarFallback>{(state.user.name ?? "Y").slice(0, 1).toUpperCase()}</AvatarFallback>
+                    <AvatarImage src={account.avatar ?? undefined} alt="" />
+                    <AvatarFallback>{(account.name ?? "Y").slice(0, 1).toUpperCase()}</AvatarFallback>
                   </Avatar>
-                  <div className="flex flex-col gap-0.5 leading-none">
-                    <span className="truncate text-sm font-medium">{state.user.name ?? "Signed in"}</span>
-                    <span className="text-xs text-muted-foreground">Account {state.user.authUser}</span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-none">
+                    <span className="truncate text-sm font-medium">{account.name ?? "Signed in"}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 text-muted-foreground" aria-hidden="true">
+                    <MoreHorizontalIcon />
                   </div>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" align="start" className="w-56">
                   <DropdownMenuGroup>
                     <DropdownMenuLabel>YouTube Music</DropdownMenuLabel>
                     <DropdownMenuItem onClick={() => navigate({ name: "settings" })}>Settings</DropdownMenuItem>
+                    <DropdownMenuCheckboxItem
+                      checked={isDark}
+                      onCheckedChange={(checked) => void updateSettings({ theme: checked ? "dark" : "light" })}
+                      closeOnClick={false}
+                      className="justify-between pr-3 [&_[data-slot=dropdown-menu-checkbox-item-indicator]]:hidden"
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <MoonIcon />
+                        Dark mode
+                      </span>
+                      <Switch
+                        size="sm"
+                        checked={isDark}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        className="pointer-events-none"
+                      />
+                    </DropdownMenuCheckboxItem>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>

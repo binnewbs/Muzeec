@@ -11,6 +11,8 @@ import type {
   PlayerDecision,
   PlayerState,
   Rating,
+  SpotifyImportProgress,
+  SpotifyImportResult,
   Track,
 } from "../shared/types.ts"
 
@@ -38,6 +40,8 @@ export type MuzeecApi = {
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
   playlistDelete: (input: { playlistId: string }) => Promise<Result<void>>
+  spotifyImport: (input: { url: string; jobId: string }) => Promise<Result<SpotifyImportResult>>
+  spotifyCancel: (input: { jobId: string }) => Promise<Result<boolean>>
   subscribe: (input: { channelId: string; subscribed: boolean; params?: string | null }) => Promise<Result<void>>
   history: (input: HistoryEvent) => Promise<Result<void>>
   lyrics: (input: LyricsRequest) => Promise<Result<LyricsResult | null>>
@@ -52,6 +56,7 @@ export type MuzeecApi = {
   windowQuit: () => Promise<Result<void>>
   onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
+  onSpotifyProgress: (callback: (progress: SpotifyImportProgress) => void) => () => void
 }
 
 const api: MuzeecApi = {
@@ -68,6 +73,8 @@ const api: MuzeecApi = {
   playlistCreate: (input) => call("yt:playlistCreate", input),
   playlistAdd: (input) => call("yt:playlistAdd", input),
   playlistDelete: (input) => call("yt:playlistDelete", input),
+  spotifyImport: (input) => call("spotify:import", input),
+  spotifyCancel: (input) => call("spotify:cancel", input),
   subscribe: (input) => call("yt:subscribe", input),
   history: (input) => call("yt:history", input),
   lyrics: (input) => call("lyrics:get", input),
@@ -89,6 +96,11 @@ const api: MuzeecApi = {
     const listener = (_event: unknown, action: "playpause" | "next" | "previous") => callback(action)
     ipcRenderer.on("sys:mediaKey", listener)
     return () => ipcRenderer.removeListener("sys:mediaKey", listener)
+  },
+  onSpotifyProgress: (callback) => {
+    const listener = (_event: unknown, progress: SpotifyImportProgress) => callback(progress)
+    ipcRenderer.on("spotify:progress", listener)
+    return () => ipcRenderer.removeListener("spotify:progress", listener)
   },
 }
 

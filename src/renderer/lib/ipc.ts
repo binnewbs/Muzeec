@@ -10,6 +10,8 @@ import type {
   PlayerDecision,
   PlayerState,
   Rating,
+  SpotifyImportProgress,
+  SpotifyImportResult,
   Track,
 } from "@shared/types"
 
@@ -29,6 +31,8 @@ export type MuzeecApi = {
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
   playlistDelete: (input: { playlistId: string }) => Promise<Result<void>>
+  spotifyImport: (input: { url: string; jobId: string }) => Promise<Result<SpotifyImportResult>>
+  spotifyCancel: (input: { jobId: string }) => Promise<Result<boolean>>
   subscribe: (input: { channelId: string; subscribed: boolean; params?: string | null }) => Promise<Result<void>>
   history: (input: HistoryEvent) => Promise<Result<void>>
   lyrics: (input: LyricsRequest) => Promise<Result<LyricsResult | null>>
@@ -43,6 +47,7 @@ export type MuzeecApi = {
   windowQuit: () => Promise<Result<void>>
   onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
+  onSpotifyProgress: (callback: (progress: SpotifyImportProgress) => void) => () => void
 }
 
 declare global {

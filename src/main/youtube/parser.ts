@@ -310,6 +310,7 @@ function toItem(renderer: any): MediaItem | null {
     textOf(renderer.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text) ??
     textOf(renderer.fixedColumns?.[0]?.musicResponsiveListItemFlexColumnRenderer?.text) ??
     textOf(renderer.lengthText) ??
+    subtitleParts.find((part) => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(part)) ??
     null
   const duration = parseDuration(durationText)
   const thumbnail = sizedThumbnail(

@@ -164,6 +164,56 @@ export type AppSettings = {
 
 export type IpcResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
+/** Neutral track model shared by Spotify readers and the catalogue matcher. */
+export type SpotifyTrack = {
+  sourceId: string
+  title: string
+  artists: string[]
+  album: string | null
+  durationMs: number | null
+  isrc: string | null
+  artworkUrl: string | null
+  explicit: boolean | null
+}
+
+export type SpotifyPlaylist = {
+  id: string
+  name: string
+  cover: string | null
+  tracks: SpotifyTrack[]
+  /** Podcast episodes, local files and other non-track rows. */
+  skipped: number
+  /** True when Spotify's page limited the import to the first 100 entries. */
+  truncated: boolean
+}
+
+export type SpotifyImportPhase = "reading" | "matching" | "creating" | "adding"
+
+export type SpotifyImportProgress = {
+  jobId: string
+  phase: SpotifyImportPhase
+  done: number
+  total: number
+}
+
+export type SpotifyUnmatchedTrack = {
+  title: string
+  artists: string[]
+  reason: string
+}
+
+export type SpotifyImportResult = {
+  playlistId: string
+  title: string
+  total: number
+  matched: number
+  added: number
+  skipped: number
+  truncated: boolean
+  unmatched: SpotifyUnmatchedTrack[]
+  warning: string | null
+}
+
 export type Rating = "like" | "dislike" | "none"
 
 export type AuthState = {

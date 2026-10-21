@@ -30,10 +30,16 @@ export async function createPlaylist(title: string, videoId?: string): Promise<s
 }
 
 export async function addToPlaylist(playlist: string, videoId: string): Promise<void> {
+  await addToPlaylistBatch(playlist, [videoId])
+}
+
+/** Append several videos in one request. Action order is preserved by YouTube. */
+export async function addToPlaylistBatch(playlist: string, videoIds: string[]): Promise<void> {
   requireScope()
+  if (!videoIds.length) return
   const response: any = await innertube("browse/edit_playlist", {
     playlistId: playlistId(playlist),
-    actions: [{ action: "ACTION_ADD_VIDEO", addedVideoId: videoId }],
+    actions: videoIds.map((videoId) => ({ action: "ACTION_ADD_VIDEO", addedVideoId: videoId })),
   })
   if (response?.error) throw new Error(response.error.message ?? "Could not add to playlist")
 }

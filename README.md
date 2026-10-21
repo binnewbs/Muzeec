@@ -38,6 +38,7 @@ It is a personal project: small, keyboard-friendly, and designed to stay out of 
 - Liked songs, playlists, and library content loaded live from your account.
 - Like / unlike songs.
 - Create, add to, and delete playlists.
+- Import a public Spotify playlist by URL; songs are matched to YouTube Music and created as a private playlist, with unmatched songs listed.
 - Playlist sorting by date added (source order) or title, ascending or descending.
 - Subscribe and unsubscribe from artists.
 - Best-effort playback history reporting to YouTube, with a setting to disable it.
