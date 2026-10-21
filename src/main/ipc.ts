@@ -292,6 +292,11 @@ export function registerIpc(): void {
     if (typeof input.volume === "number") next.volume = Math.min(1, Math.max(0, input.volume))
     if (input.quality === "high" || input.quality === "normal") next.quality = input.quality
     if (typeof input.lowMemory === "boolean") next.lowMemory = input.lowMemory
+    if (typeof input.crossfadeEnabled === "boolean") next.crossfadeEnabled = input.crossfadeEnabled
+    if (typeof input.crossfadeSeconds === "number" && Number.isFinite(input.crossfadeSeconds)) {
+      next.crossfadeSeconds = Math.max(1, Math.min(10, Math.round(input.crossfadeSeconds)))
+    }
+    if (typeof input.gaplessEnabled === "boolean") next.gaplessEnabled = input.gaplessEnabled
     if (typeof input.historyEnabled === "boolean") next.historyEnabled = input.historyEnabled
     if (input.theme === "dark" || input.theme === "light" || input.theme === "system") next.theme = input.theme
     if (typeof input.lyricsEnabled === "boolean") {

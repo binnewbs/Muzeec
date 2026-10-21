@@ -107,41 +107,98 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="playback" className="pt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Audio quality</CardTitle>
-              <CardDescription>High prefers Opus 251, then AAC 140.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldTitle>Quality</FieldTitle>
-                  </FieldContent>
-                  <ToggleGroup
-                    value={[settings.quality]}
-                    onValueChange={(value) => {
-                      const quality = value[0]
-                      if (quality === "high" || quality === "normal") void update({ quality })
-                    }}
-                  >
-                    <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
-                    <ToggleGroupItem value="high">High</ToggleGroupItem>
-                  </ToggleGroup>
-                </Field>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldTitle>Low memory mode</FieldTitle>
-                    <FieldDescription>Smaller in-memory caches for low-RAM machines.</FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    checked={settings.lowMemory}
-                    onCheckedChange={(checked) => void update({ lowMemory: checked })}
-                  />
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Audio quality</CardTitle>
+                <CardDescription>High prefers Opus 251, then AAC 140.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Quality</FieldTitle>
+                    </FieldContent>
+                    <ToggleGroup
+                      value={[settings.quality]}
+                      onValueChange={(value) => {
+                        const quality = value[0]
+                        if (quality === "high" || quality === "normal") void update({ quality })
+                      }}
+                    >
+                      <ToggleGroupItem value="normal">Normal</ToggleGroupItem>
+                      <ToggleGroupItem value="high">High</ToggleGroupItem>
+                    </ToggleGroup>
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Low memory mode</FieldTitle>
+                      <FieldDescription>Smaller in-memory caches for low-RAM machines.</FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      checked={settings.lowMemory}
+                      onCheckedChange={(checked) => void update({ lowMemory: checked })}
+                    />
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Transitions</CardTitle>
+                <CardDescription>How one track flows into the next.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Gapless playback</FieldTitle>
+                      <FieldDescription>
+                        Preload the next track and start it the instant the current one ends.
+                      </FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      checked={settings.gaplessEnabled}
+                      onCheckedChange={(checked) => void update({ gaplessEnabled: checked })}
+                    />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Crossfade</FieldTitle>
+                      <FieldDescription>Fade out the current track while fading in the next.</FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      checked={settings.crossfadeEnabled}
+                      onCheckedChange={(checked) => void update({ crossfadeEnabled: checked })}
+                    />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Fade duration</FieldTitle>
+                      <FieldDescription>Seconds of overlap between tracks. Clamped to 1–10.</FieldDescription>
+                    </FieldContent>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      step={1}
+                      value={settings.crossfadeSeconds}
+                      className="w-28"
+                      disabled={!settings.crossfadeEnabled}
+                      aria-label="Crossfade duration in seconds"
+                      onChange={(event) => {
+                        const value = Number(event.target.value)
+                        if (Number.isFinite(value)) {
+                          void update({ crossfadeSeconds: Math.max(1, Math.min(10, Math.round(value))) })
+                        }
+                      }}
+                    />
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="lyrics" className="pt-4">

@@ -20,6 +20,14 @@ let lastProgressPing = 0
 let historyVideoId: string | null = null
 /** Track restored from the last session; its stream resolves only when the user hits play. */
 let pendingRestore: { track: Track; position: number } | null = null
+/** Next track whose stream is already buffered on the engine's standby element. */
+let prepared: { track: Track; rawVideoId: string } | null = null
+let prefetching = false
+let prefetchToken = 0
+/** True while a crossfade/gapless hand-off is creating the next track. */
+let transitioning = false
+/** How long before the end we start resolving the next track for gapless/crossfade. */
+const PREFETCH_WINDOW = 15
 
 function finishHistory(position: number, duration: number): void {
   if (!historyVideoId) return
@@ -92,7 +100,26 @@ export async function playTrack(track: Track): Promise<void> {
   await startTrack(musicTrack)
 }
 
-async function startTrack(track: Track, rememberCurrent = true, startAt = 0): Promise<void> {
+function clampFadeSeconds(): number {
+  return Math.min(10, Math.max(1, useSettings.getState().settings.crossfadeSeconds))
+}
+
+/** Drops any pending prefetch/transition state (manual skips, fresh starts). */
+function cancelTransition(): void {
+  prefetchToken++
+  prefetching = false
+  prepared = null
+  transitioning = false
+  engine.clearPrepared()
+  engine.cancelFade()
+}
+
+async function startTrack(
+  track: Track,
+  rememberCurrent = true,
+  startAt = 0,
+  preparedMode?: "crossfade" | "gapless",
+): Promise<void> {
   pendingRestore = null
   const token = ++requestToken
   if (rememberCurrent) remember(track)
@@ -100,12 +127,26 @@ async function startTrack(track: Track, rememberCurrent = true, startAt = 0): Pr
   const player = usePlayer.getState()
   player.set({ current: track, status: "loading", error: null, liked: false, duration: track.duration ?? 0 })
   setMediaSession(track, false)
+  let fadeSeconds = 0
+  if (preparedMode) {
+    // Promote the preloaded stream before anything else, so the swap is instant.
+    fadeSeconds = clampFadeSeconds()
+    if (!engine.adoptPrepared(preparedMode)) preparedMode = undefined
+  } else {
+    cancelTransition()
+  }
   try {
-    const decision = await unwrap(api.player({ videoId: track.kind === "track" ? track.videoId : track.id }))
-    if (token !== requestToken) return
-    await engine.load(decision)
-    if (token !== requestToken) return
-    const maxDuration = decision.duration || track.duration || 0
+    if (!preparedMode) {
+      const decision = await unwrap(api.player({ videoId: track.kind === "track" ? track.videoId : track.id }))
+      if (token !== requestToken) return
+      await engine.load(decision)
+      if (token !== requestToken) return
+    } else if (preparedMode === "crossfade") {
+      // The incoming track ramps in while the old one fades out; fade timing
+      // follows the new track's position so pause/seek stay correct.
+      engine.beginFade(fadeSeconds)
+    }
+    const maxDuration = engine.duration || track.duration || 0
     if (startAt > 0 && maxDuration > 0) engine.seek(Math.min(startAt, maxDuration))
     await engine.play()
     usePlayer.getState().set({ status: "playing", duration: engine.duration || track.duration || 0 })
@@ -115,6 +156,7 @@ async function startTrack(track: Track, rememberCurrent = true, startAt = 0): Pr
     void api.history({ videoId: track.videoId, event: "start", position: startAt, duration: engine.duration })
     void api.setSettings({ lastTrack: track, lastPosition: startAt })
   } catch (error) {
+    if (preparedMode) engine.cancelFade()
     if (token !== requestToken) return
     const message = errorMessage(error)
     usePlayer.getState().set({ status: "error", error: message })
@@ -153,12 +195,40 @@ export function togglePlay(): void {
   if (status === "error") void playTrack(current)
 }
 
-export function next(): void {
+/** Decides the next track without touching the network; `consume` applies the queue side effects. */
+function pickNext(): { track: Track; consume: () => void } | null {
   const queue = useQueue.getState()
-  const queued = queue.takeNext()
-  if (queued) {
-    resetAutoplay()
-    void startTrack(queued)
+  const head = queue.tracks[0]
+  if (head) {
+    return {
+      track: head,
+      consume: () => {
+        resetAutoplay()
+        useQueue.getState().takeNext()
+      },
+    }
+  }
+  const current = usePlayer.getState().current
+  if (queue.repeat === "all" && cycle.length && current) {
+    const pass = nextInCycle(cycle, current.videoId, queue.shuffle)
+    if (pass) {
+      return {
+        track: pass.track,
+        consume: () => {
+          useQueue.getState().replace(pass.upcoming)
+          resetAutoplay()
+        },
+      }
+    }
+  }
+  return null
+}
+
+export function next(): void {
+  const picked = pickNext()
+  if (picked) {
+    picked.consume()
+    void startTrack(picked.track)
     return
   }
 
@@ -169,17 +239,61 @@ export function next(): void {
     return
   }
 
-  if (queue.repeat === "all" && cycle.length) {
-    const pass = nextInCycle(cycle, current.videoId, queue.shuffle)
-    if (pass) {
-      queue.replace(pass.upcoming)
-      resetAutoplay()
-      void startTrack(pass.track)
-      return
-    }
-  }
-
   void playSimilar(current)
+}
+
+/** Buffers the next track's stream on the standby element ahead of the transition. */
+async function prefetchNext(): Promise<void> {
+  const { gaplessEnabled, crossfadeEnabled } = useSettings.getState().settings
+  if (!gaplessEnabled && !crossfadeEnabled) return
+  if (useQueue.getState().repeat === "one") return
+  const picked = pickNext()
+  if (!picked || (prepared && prepared.rawVideoId === picked.track.videoId)) return
+  if (prefetching) return
+  prefetching = true
+  const token = ++prefetchToken
+  let resolved: Track | null = null
+  try {
+    resolved = await ensureMusicTrack(picked.track)
+    const decision = await unwrap(api.player({ videoId: resolved.kind === "track" ? resolved.videoId : resolved.id }))
+    if (token !== prefetchToken) return
+    await engine.prepare(decision)
+  } catch {
+    engine.clearPrepared()
+    return // Prefetch is best-effort; the fallback path still advances on "ended".
+  } finally {
+    prefetching = false
+  }
+  if (token !== prefetchToken || !resolved) return
+  prepared = { track: resolved, rawVideoId: picked.track.videoId }
+}
+
+/**
+ * Starts the buffered next track: gapless swaps at "ended", crossfade fires
+ * while the current track still has fade time left. Falls back to the legacy
+ * path when the pick changed or the standby was never populated.
+ */
+async function beginTransition(mode: "crossfade" | "gapless"): Promise<void> {
+  if (transitioning || !prepared) return
+  const pending = prepared
+  const picked = pickNext()
+  if (!picked || picked.track.videoId !== pending.rawVideoId) {
+    prepared = null
+    engine.clearPrepared()
+    if (mode === "gapless") {
+      // The current track already ended; advance through the legacy path.
+      void api.setSettings({ lastPosition: 0 })
+      finishHistory(engine.duration, engine.duration)
+      next()
+    }
+    return
+  }
+  transitioning = true
+  prepared = null
+  if (mode === "crossfade") finishHistory(engine.currentTime, engine.duration)
+  picked.consume()
+  await startTrack(pending.track, true, 0, mode)
+  transitioning = false
 }
 
 async function playSimilar(current: Track): Promise<void> {
@@ -384,21 +498,52 @@ export function initPlayer(): void {
   })
   // Avoid pagehide: app teardown can report a zeroed media position.
 
-  engine.audio.addEventListener("ended", () => {
+  engine.onEnded = () => {
     if (useQueue.getState().repeat === "one") {
       engine.seek(0)
       void engine.play()
       return
     }
+    const { gaplessEnabled, crossfadeEnabled } = useSettings.getState().settings
+    if (prepared && (gaplessEnabled || crossfadeEnabled)) {
+      void beginTransition("gapless")
+      return
+    }
     void api.setSettings({ lastPosition: 0 })
     finishHistory(engine.duration, engine.duration)
     next()
-  })
+  }
 
-  engine.audio.addEventListener("error", () => {
+  engine.onError = () => {
     if (usePlayer.getState().status !== "loading") {
       usePlayer.getState().set({ status: "error", error: "Playback stream was refused" })
     }
+  }
+
+  // Drives gapless/crossfade: resolves the upcoming track near the end of the
+  // current one, then hands over at the crossfade point or on "ended".
+  engine.subscribe(() => {
+    if (transitioning) return
+    const { gaplessEnabled, crossfadeEnabled } = useSettings.getState().settings
+    if (!gaplessEnabled && !crossfadeEnabled) {
+      if (prepared) cancelTransition()
+      return
+    }
+    if (useQueue.getState().repeat === "one") {
+      if (prepared) cancelTransition()
+      return
+    }
+    const { current, status } = usePlayer.getState()
+    if (!current || status !== "playing") return
+    const duration = engine.duration
+    if (!duration) return
+    const remaining = duration - engine.currentTime
+    if (!prepared) {
+      if (remaining <= 0 || remaining > PREFETCH_WINDOW) return
+      void prefetchNext()
+      return
+    }
+    if (crossfadeEnabled && remaining <= clampFadeSeconds()) void beginTransition("crossfade")
   })
 
   engine.subscribe(() => {

@@ -146,6 +146,9 @@ export type AppSettings = {
   volume: number
   quality: "high" | "normal"
   lowMemory: boolean
+  crossfadeEnabled: boolean
+  crossfadeSeconds: number
+  gaplessEnabled: boolean
   historyEnabled: boolean
   theme: "dark" | "light" | "system"
   lyricsEnabled: boolean
