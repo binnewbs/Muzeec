@@ -1,7 +1,7 @@
 {
   "name": "muzeec",
   "private": true,
-  "version": "1.2.1",
+  "version": "1.2.5",
   "description": "A minimal, modern YouTube Music desktop client.",
   "author": "Bintang M",
   "desktopName": "muzeec.desktop",
