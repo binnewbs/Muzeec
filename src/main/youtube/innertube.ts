@@ -1,12 +1,15 @@
 import { CHROME_UA, cookieHeader, signingCookie } from "./session.ts"
-import { getClientInfo, getScope } from "./auth.ts"
+import { getClientInfo, getPlayerClientVersion, getScope } from "./auth.ts"
 import { sapisidHash } from "./sapisid.ts"
+import { visitorToken } from "./botguard.ts"
 
 const ORIGIN = "https://music.youtube.com"
 
 export type InnertubeOptions = {
   signed?: boolean
   retries?: number
+  /** Attach the visitor-bound BotGuard token to player requests (default true). */
+  integrity?: boolean
   client?: {
     name: string
     id: number
@@ -20,15 +23,18 @@ export type InnertubeOptions = {
 export async function innertube<T = any>(
   endpoint: string,
   body: Record<string, unknown> = {},
-  { signed = true, retries = 2, client }: InnertubeOptions = {},
+  { signed = true, retries = 2, integrity = true, client }: InnertubeOptions = {},
 ): Promise<T> {
   const info = await getClientInfo()
   const scope = signed ? getScope() : null
   const cookie = scope ? await cookieHeader() : ""
   const signing = scope ? await signingCookie() : null
   const clientName = client?.name ?? "WEB_REMIX"
-  const clientVersion = client?.version ?? info.clientVersion
+  const clientVersion = client?.version ?? (await getPlayerClientVersion(clientName))
   const visitorData = scope?.visitorData ?? info.visitorData
+  // Web clients need a visitor-bound PoToken on playback; VISIONOS refuses it.
+  const poToken =
+    integrity && endpoint === "player" && clientName !== "VISIONOS" ? await visitorToken(visitorData) : null
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "User-Agent": client?.ua ?? CHROME_UA,
@@ -52,6 +58,7 @@ export async function innertube<T = any>(
 
   const payload = {
     ...body,
+    ...(poToken ? { serviceIntegrityDimensions: { poToken } } : {}),
     context: {
       client: {
         clientName,

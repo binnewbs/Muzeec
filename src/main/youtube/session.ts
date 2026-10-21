@@ -5,6 +5,8 @@ export const CHROME_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
 export const VISIONOS_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
+export const MOBILE_UA =
+  "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
 
 export const SIGNING_COOKIES = ["SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID"] as const
 
@@ -19,7 +21,7 @@ const MEDIA_HEADER_BY_CLIENT: Record<string, { origin?: string; referer?: string
   MWEB: {
     origin: "https://m.youtube.com",
     referer: "https://m.youtube.com/",
-    ua: "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+    ua: MOBILE_UA,
   },
 }
 

@@ -28,7 +28,9 @@ async function getPlayer(): Promise<Player> {
       }
       return vm.runInContext(`(function(){\n${data.output}\n})()`, vm.createContext(sandbox), { timeout: 10_000 })
     }
-    return PlayerClass.create(undefined)
+    const playerInstance = await PlayerClass.create(undefined)
+    console.log(`[decipher] player=${playerInstance.player_id} sts=${playerInstance.signature_timestamp}`)
+    return playerInstance
   })()
   player = await loading
   return player
@@ -38,7 +40,10 @@ async function getPlayer(): Promise<Player> {
 export async function decipher(cipher: string, _signatureTimestamp: number): Promise<string | null> {
   try {
     const instance = await getPlayer()
-    return await instance.decipher(cipher)
+    // youtubei.js takes a plain URL first and the cipher second. Passing the
+    // cipher as the URL only transforms `n` and leaves the `s` signature
+    // untransformed, so googlevideo answers 403 for every media request.
+    return await instance.decipher(undefined, cipher)
   } catch (error) {
     console.error("decipher failed", error instanceof Error ? error.message : error)
     return null

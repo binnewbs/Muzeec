@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Muzeec PoToken</title>
+  </head>
+  <body>
+    <script>
+      /**
+       * BotGuard page (DOC §9.5). Runs in a hidden sandboxed BrowserWindow so
+       * the interpreter sees a real browser realm. The main process drives it
+       * through `webContents.executeJavaScript`; only plain strings and bytes
+       * cross the boundary.
+       */
+      (function () {
+        "use strict"
+
+        let vmFunctions = null
+        let webPoSignalOutput = null
+        let minter = null
+
+        function noop() {}
+
+        function waitFor(check, timeoutMs) {
+          return new Promise(function (resolve, reject) {
+            const started = Date.now()
+            const timer = setInterval(function () {
+              let value
+              try {
+                value = check()
+              } catch (error) {
+                clearInterval(timer)
+                reject(error)
+                return
+              }
+              if (value) {
+                clearInterval(timer)
+                resolve(value)
+              } else if (Date.now() - started >= timeoutMs) {
+                clearInterval(timer)
+                reject(new Error("BotGuard timed out waiting for the VM"))
+              }
+            }, 10)
+          })
+        }
+
+        function injectInterpreter(source, hash) {
+          if (hash) document.getElementById(hash)?.remove()
+          const script = document.createElement("script")
+          if (hash) script.id = hash
+          script.textContent = source
+          ;(document.head || document.documentElement).appendChild(script)
+        }
+
+        async function run(challenge) {
+          if (!challenge || !challenge.interpreterJavascript) {
+            throw new Error("BotGuard returned no interpreter")
+          }
+          if (!challenge.program || !challenge.globalName) {
+            throw new Error("BotGuard returned an incomplete challenge")
+          }
+
+          vmFunctions = null
+          minter = null
+          webPoSignalOutput = []
+
+          injectInterpreter(challenge.interpreterJavascript, challenge.interpreterHash)
+
+          const vm = window[challenge.globalName]
+          if (!vm || typeof vm.a !== "function") {
+            throw new Error("BotGuard did not install its VM")
+          }
+
+          try {
+            vm.a(
+              challenge.program,
+              function (asyncSnapshotFunction, shutdownFunction, passEventFunction, checkCameraFunction) {
+                vmFunctions = {
+                  asyncSnapshotFunction: asyncSnapshotFunction,
+                  shutdownFunction: shutdownFunction,
+                  passEventFunction: passEventFunction,
+                  checkCameraFunction: checkCameraFunction,
+                }
+              },
+              true,
+              undefined,
+              noop,
+              [[], []],
+              undefined,
+              false,
+              [noop, noop, noop, noop, noop],
+            )
+          } catch (error) {
+            throw new Error("BotGuard program failed: " + (error?.message || String(error)))
+          }
+
+          await waitFor(function () {
+            return vmFunctions && vmFunctions.asyncSnapshotFunction
+          }, 10_000)
+
+          const response = await new Promise(function (resolve, reject) {
+            const timer = setTimeout(function () {
+              reject(new Error("BotGuard snapshot timed out"))
+            }, 10_000)
+            try {
+              vmFunctions.asyncSnapshotFunction(
+                function (value) {
+                  clearTimeout(timer)
+                  resolve(value)
+                },
+                [undefined, undefined, webPoSignalOutput, undefined],
+              )
+            } catch (error) {
+              clearTimeout(timer)
+              reject(error)
+            }
+          })
+
+          if (!response) throw new Error("BotGuard returned no snapshot")
+          return String(response)
+        }
+
+        async function createMinter(integrityToken) {
+          const getMinter = webPoSignalOutput && webPoSignalOutput[0]
+          if (typeof getMinter !== "function") {
+            throw new Error("BotGuard did not expose a minter")
+          }
+          const callback = await getMinter(new Uint8Array(integrityToken))
+          if (typeof callback !== "function") {
+            throw new Error("BotGuard minter is not callable")
+          }
+          minter = callback
+        }
+
+        async function mint(identifier) {
+          if (!minter) throw new Error("BotGuard minter is not ready")
+          const result = await minter(new TextEncoder().encode(identifier))
+          if (!(result instanceof Uint8Array)) {
+            throw new Error("BotGuard returned an invalid token")
+          }
+          let binary = ""
+          for (let index = 0; index < result.length; index++) {
+            binary += String.fromCharCode(result[index])
+          }
+          return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_")
+        }
+
+        window.__muzeecBotGuard = { run: run, createMinter: createMinter, mint: mint }
+      })()
+    </script>
+  </body>
+</html>

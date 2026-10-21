@@ -3,9 +3,17 @@ import { getSettings } from "../storage/settings.ts"
 import { cacheGet, cacheSet } from "../storage/cache.ts"
 import { VISIONOS_UA, mediaHeadersFor } from "./session.ts"
 import { innertube } from "./innertube.ts"
-import { getClientInfo } from "./auth.ts"
+import { getClientInfo, getScope } from "./auth.ts"
+import { resetBotGuard, videoToken } from "./botguard.ts"
 import { decipher } from "./decipher.ts"
 import { parseBrowsePage } from "./parser.ts"
+import {
+  isBotCheck,
+  isPermanent,
+  pickFailureMessage,
+  readableReason,
+  type PlayerFailureReason,
+} from "./player-failures.ts"
 
 type Client = {
   name: string
@@ -88,7 +96,7 @@ async function fetchWebTracking(videoId: string): Promise<any | null> {
         contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
       },
     },
-    { client: CLIENTS[0], retries: 0 },
+    { client: CLIENTS[0], retries: 0, integrity: false },
   )
   if (response?.playabilityStatus?.status !== "OK") return null
   return response?.playbackTracking ?? null
@@ -166,67 +174,124 @@ type Candidate = { url: string; mimeType: string; bitrate: number; codec: string
 
 async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDecision> {
   const info = await getClientInfo()
-  // VISIONOS returns direct audio URLs; web clients fall back to ciphered/SABR bodies.
-  const order = [CLIENTS[3], CLIENTS[0], CLIENTS[1], CLIENTS[2]]
-  const reasons: string[] = []
+  const visitorData = getScope()?.visitorData ?? info.visitorData
+  // Signed web clients carry the account's PoToken and return the full stream;
+  // VISIONOS remains the fallback. Unsigned playback tries VISIONOS' direct
+  // URLs first, then the web clients.
+  const order = signedIn
+    ? [CLIENTS[0], CLIENTS[1], CLIENTS[3], CLIENTS[2]]
+    : [CLIENTS[3], CLIENTS[0], CLIENTS[1], CLIENTS[2]]
+  const reasons: PlayerFailureReason[] = []
 
   for (const client of order) {
     const key = `${videoId}:${client.name}`
     const excludedUntil = exclusions.get(key)
     if (excludedUntil && excludedUntil > Date.now()) continue
 
-    try {
-      const response: any = await innertube(
-        "player",
-        {
-          videoId,
-          contentCheckOk: true,
-          racyCheckOk: true,
-          playbackContext: {
-            contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
-          },
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = await attemptClient(client, videoId, signedIn, info.signatureTimestamp, visitorData)
+      if (result.kind === "decision") return result.decision
+      if (result.kind === "permanent") throw result.failure
+      reasons.push(result.reason)
+      if (!result.retry || attempt > 0) break
+      // A refusal that follows the page, not the track, is usually a bad BotGuard
+      // session: drop it and mint fresh visitor/video tokens for one retry.
+      resetBotGuard()
+      console.log(`[player] ${videoId}: retrying ${client.label} with a fresh BotGuard page`)
+    }
+  }
+
+  const detail = [...new Set(reasons.map((r) => `${r.label} — ${r.reason}`))].join(" | ")
+  console.log(`[player] ${videoId}: ${detail || "no clients left"}`)
+  const message = pickFailureMessage(reasons)
+  throw new PlayerFailure(message ?? "No playable audio stream", false)
+}
+
+type ClientAttempt =
+  | { kind: "decision"; decision: PlayerDecision }
+  | { kind: "reason"; reason: PlayerFailureReason; retry: boolean }
+  | { kind: "permanent"; failure: PlayerFailure }
+
+/** One player request plus its media probes for a single client. */
+async function attemptClient(
+  client: Client,
+  videoId: string,
+  signedIn: boolean,
+  signatureTimestamp: number,
+  visitorData: string,
+): Promise<ClientAttempt> {
+  const key = `${videoId}:${client.name}`
+  try {
+    const response: any = await innertube(
+      "player",
+      {
+        videoId,
+        contentCheckOk: true,
+        racyCheckOk: true,
+        playbackContext: {
+          contentPlaybackContext: { signatureTimestamp },
         },
-        { signed: signedIn && client.name === "WEB_REMIX", client, retries: 1 },
-      )
-      const status = response?.playabilityStatus
-      if (status?.status !== "OK") {
-        const reason = readableReason(status?.reason ?? status?.status ?? "Refused")
-        reasons.push(`${client.label}: ${reason}`)
-        if (isPermanent(reason)) {
-          rememberVerdict(videoId, reason)
-          throw new PlayerFailure(reason, true)
-        }
-        excludeClient(key)
+      },
+      { signed: signedIn && client.name === "WEB_REMIX", client, retries: 1 },
+    )
+    const status = response?.playabilityStatus
+    if (status?.status !== "OK") {
+      const reason = readableReason(status?.reason ?? status?.status ?? "Refused")
+      if (isBotCheck(status?.status, reason)) {
+        // The gate follows the requester's network, not the track, so retrying
+        // after a VPN change should not wait out the per-track exclusion.
+        return { kind: "reason", reason: { label: client.label, reason, kind: "bot" }, retry: false }
+      }
+      if (isPermanent(reason)) {
+        rememberVerdict(videoId, reason)
+        return { kind: "permanent", failure: new PlayerFailure(reason, true) }
+      }
+      excludeClient(key)
+      return { kind: "reason", reason: { label: client.label, reason, kind: "playability" }, retry: false }
+    }
+
+    const formats: any[] = response?.streamingData?.adaptiveFormats ?? []
+    const preferredItag = getSettings().quality === "normal" ? 140 : 251
+    const audio = formats
+      .filter((f) => String(f.mimeType ?? "").startsWith("audio/"))
+      .sort((a, b) => score(b, preferredItag) - score(a, preferredItag))
+    if (!audio.length) {
+      excludeClient(key)
+      return {
+        kind: "reason",
+        reason: { label: client.label, reason: "no audio formats", kind: "formats" },
+        retry: false,
+      }
+    }
+
+    const tracking = response?.playbackTracking
+    if (tracking) {
+      if (client.name === "WEB_REMIX") cacheSet(trackingKey(videoId), tracking, 30 * 60 * 1000)
+      else if (signedIn) void ensureWebTracking(videoId)
+    }
+
+    let candidates = 0
+    let refused: ProbeResult | null = null
+    // Signed web URLs need the video-bound `pot` even when the visitor token
+    // already unlocked the player response.
+    const pot =
+      client.name !== "VISIONOS" && audio.some((format) => format.url || format.signatureCipher || format.cipher)
+        ? await videoToken(videoId, visitorData)
+        : null
+    for (const format of audio.slice(0, 2)) {
+      const candidate = await toCandidate(format, client.label, signatureTimestamp, pot)
+      if (!candidate) continue
+      candidates += 1
+      const probeResult = await probe(candidate.url)
+      if (!probeResult.ok) {
+        // Media refusals track the network, not the client: a retry after a
+        // VPN change should resolve fresh URLs instead of waiting out an exclusion.
+        refused = probeResult
         continue
       }
-
-      const formats: any[] = response?.streamingData?.adaptiveFormats ?? []
-      const preferredItag = getSettings().quality === "normal" ? 140 : 251
-      const audio = formats
-        .filter((f) => String(f.mimeType ?? "").startsWith("audio/"))
-        .sort((a, b) => score(b, preferredItag) - score(a, preferredItag))
-      if (!audio.length) {
-        reasons.push(`${client.label}: no audio formats`)
-        excludeClient(key)
-        continue
-      }
-
-      const tracking = response?.playbackTracking
-      if (tracking) {
-        if (client.name === "WEB_REMIX") cacheSet(trackingKey(videoId), tracking, 30 * 60 * 1000)
-        else if (signedIn) void ensureWebTracking(videoId)
-      }
-
-      for (const format of audio.slice(0, 2)) {
-        const candidate = await toCandidate(format, client.label, info.signatureTimestamp)
-        if (!candidate) continue
-        const probeResult = await probe(candidate.url)
-        if (!probeResult.ok) {
-          reasons.push(`${client.label}: ${probeResult.reason}`)
-          excludeClient(key)
-          continue
-        }
-        return {
+      return {
+        kind: "decision",
+        decision: {
           videoId,
           url: candidate.url,
           mimeType: candidate.mimeType,
@@ -235,16 +300,42 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
           client: candidate.client,
           expiresAt: Date.now() + 5 * 60 * 60 * 1000,
           duration: Number(response?.videoDetails?.lengthSeconds ?? 0),
-        }
+        },
       }
-    } catch (error) {
-      if (error instanceof PlayerFailure) throw error
-      reasons.push(`${client.label}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (refused) {
+      return {
+        kind: "reason",
+        reason: { label: client.label, reason: refused.reason, kind: "probe" },
+        retry: client.name !== "VISIONOS",
+      }
+    }
+    if (!candidates) {
+      // WEB clients answer with SABR bodies and no direct URL; there is nothing to probe.
+      excludeClient(key)
+      return {
+        kind: "reason",
+        reason: { label: client.label, reason: "no direct audio URL (SABR only)", kind: "formats" },
+        retry: false,
+      }
+    }
+    return {
+      kind: "reason",
+      reason: { label: client.label, reason: "no playable audio format", kind: "formats" },
+      retry: false,
+    }
+  } catch (error) {
+    if (error instanceof PlayerFailure) return { kind: "permanent", failure: error }
+    return {
+      kind: "reason",
+      reason: {
+        label: client.label,
+        reason: error instanceof Error ? error.message : String(error),
+        kind: "request",
+      },
+      retry: false,
     }
   }
-
-  const reason = reasons.at(-1) ?? "No playable audio stream"
-  throw new PlayerFailure(reason, false)
 }
 
 function score(format: any, preferredItag: number): number {
@@ -253,13 +344,18 @@ function score(format: any, preferredItag: number): number {
   return preferred + Number(format.bitrate ?? 0)
 }
 
-async function toCandidate(format: any, client: string, signatureTimestamp: number): Promise<Candidate | null> {
+async function toCandidate(
+  format: any,
+  client: string,
+  signatureTimestamp: number,
+  pot: string | null,
+): Promise<Candidate | null> {
   const raw = format.url ?? format.signatureCipher ?? format.cipher
   if (!raw) return null
   const url = format.url ? format.url : await decipher(raw, signatureTimestamp)
   if (!url) return null
   return {
-    url,
+    url: pot ? withPot(url, pot) : url,
     mimeType: String(format.mimeType ?? "audio/mp4"),
     bitrate: Number(format.bitrate ?? 0),
     codec: String(format.mimeType ?? "").split(";")[0] ?? "audio",
@@ -267,38 +363,76 @@ async function toCandidate(format: any, client: string, signatureTimestamp: numb
   }
 }
 
+/** googlevideo refuses a web-client URL without the video-bound PoToken. */
+function withPot(url: string, pot: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.searchParams.set("pot", pot)
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
 export type ProbeResult = { ok: true } | { ok: false; reason: string }
 
-/** Probe past 1 MiB with the exact media headers before handing a URL to the player (DOC §9.7). */
+/**
+ * Probe a media URL with the exact headers and ranges the player will use
+ * (DOC §9.7). The media element opens with `Range: bytes=0-`; googlevideo
+ * refuses that range for web-client URLs that lack a PoToken even though a
+ * bounded range still answers 206, so the first check must mirror playback.
+ */
 export async function probe(url: string): Promise<ProbeResult> {
   const headers = mediaHeadersFor(url)
-  headers.Range = "bytes=1048576-1064960"
+  const start = await probeRange(url, headers, "bytes=0-")
+  if (!start.ok) return start
+  // A start-only check would miss throttled or truncated mid-file responses.
+  // Ask for a whole MiB past the first MiB (BitChord's probe) and accept the
+  // first 16 KiB: unbounded reads are throttled, so the range stays finite.
+  return probeRange(url, headers, "bytes=1048576-2097152")
+}
+
+const PROBE_BYTES = 16_384
+
+async function probeRange(
+  url: string,
+  baseHeaders: Record<string, string>,
+  range: string,
+): Promise<ProbeResult> {
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
+    const res = await fetch(url, {
+      headers: { ...baseHeaders, Range: range },
+      signal: AbortSignal.timeout(8000),
+    })
     if (res.status === 403 || res.status === 404 || res.status === 410) {
-      await res.body?.cancel()
+      const parsed = new URL(url)
+      const body = await res.text().catch(() => "")
+      console.log(
+        `[probe] ${res.status} c=${parsed.searchParams.get("c")} itag=${parsed.searchParams.get("itag")} ` +
+          `pot=${(parsed.searchParams.get("pot") ?? "").length} body=${body.slice(0, 120).replace(/\s+/g, " ")}`,
+      )
       return { ok: false, reason: `media refused (${res.status})` }
     }
     if (!res.ok && res.status !== 206) {
-      await res.body?.cancel()
+      await res.body?.cancel().catch(() => undefined)
       return { ok: false, reason: `media probe failed (${res.status})` }
     }
     const type = res.headers.get("content-type") ?? ""
     if (!type.startsWith("audio/")) {
-      await res.body?.cancel()
+      await res.body?.cancel().catch(() => undefined)
       return { ok: false, reason: `unexpected content type: ${type || "none"}` }
     }
     let received = 0
     if (res.body) {
       const reader = res.body.getReader()
-      while (received < 16384) {
+      while (received < PROBE_BYTES) {
         const { done, value } = await reader.read()
         if (done) break
         received += value.byteLength
       }
       await reader.cancel().catch(() => undefined)
     }
-    if (received < 16384) return { ok: false, reason: `short media probe (${received} bytes)` }
+    if (received < PROBE_BYTES) return { ok: false, reason: `short media probe (${received} bytes)` }
     return { ok: true }
   } catch (error) {
     return { ok: false, reason: `probe error: ${error instanceof Error ? error.message : String(error)}` }
@@ -325,7 +459,7 @@ export async function resolveMusicTrack(videoId: string): Promise<string> {
           contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
         },
       },
-      { signed: false, client: CLIENTS[0], retries: 1 },
+      { signed: false, client: CLIENTS[0], retries: 1, integrity: false },
     )
   } catch (webError) {
     try {
@@ -340,7 +474,7 @@ export async function resolveMusicTrack(videoId: string): Promise<string> {
             contentPlaybackContext: { signatureTimestamp: info.signatureTimestamp },
           },
         },
-        { signed: false, client: CLIENTS[3], retries: 1 },
+        { signed: false, client: CLIENTS[3], retries: 1, integrity: false },
       )
     } catch {
       console.log("[resolveMusicTrack] player failed", webError instanceof Error ? webError.message : String(webError))
@@ -386,12 +520,4 @@ export class PlayerFailure extends Error {
     super(reason)
     this.permanent = permanent
   }
-}
-
-function isPermanent(reason: string): boolean {
-  return /\b(age|region|country|private|terminated|premium|paid|removed)\b|age-restricted|age restricted/i.test(reason)
-}
-
-function readableReason(reason: string): string {
-  return reason.replace(/\s+/g, " ").trim()
 }

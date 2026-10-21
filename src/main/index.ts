@@ -7,6 +7,7 @@ import { createMainWindow } from "./window.ts"
 import { createTray, destroyTray } from "./tray.ts"
 import { flushHistory } from "./youtube/history.ts"
 import { flushSettings } from "./storage/settings.ts"
+import { destroyBotGuard, warmBotGuard } from "./youtube/botguard.ts"
 
 app.commandLine.appendSwitch("disable-features", "Translate,MediaRouter,OptimizationHints")
 app.commandLine.appendSwitch("disable-component-update")
@@ -47,15 +48,19 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow = null
     })
     createTray(() => mainWindow)
+    // Mint the visitor token while the user is still picking a track.
+    warmBotGuard()
 
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
+      // Ignore the hidden BotGuard page when restoring the app window.
+      if (!mainWindow) {
         mainWindow = createMainWindow()
       }
     })
   })
 
   app.on("before-quit", () => {
+    destroyBotGuard()
     flushHistory()
     flushSettings()
     destroyTray()

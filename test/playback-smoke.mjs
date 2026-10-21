@@ -6,7 +6,9 @@ await import("../out/main/index.js")
 
 app.whenReady().then(async () => {
   await new Promise((resolve) => setTimeout(resolve, 2500))
-  const win = BrowserWindow.getAllWindows()[0]
+  // The BotGuard page is a hidden data: window; pick the app renderer instead.
+  const win = BrowserWindow.getAllWindows().find((window) => !window.webContents.getURL().startsWith("data:"))
+  if (!win) throw new Error("No app window")
   const result = await win.webContents.executeJavaScript(`(async () => {
     const search = await window.muzeec.search({ query: "lofi hip hop" })
     if (!search.ok) return { step: "search", error: search.error }

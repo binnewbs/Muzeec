@@ -2,7 +2,7 @@ import { app } from "electron"
 import fs from "node:fs"
 import path from "node:path"
 import type { AuthState, AuthUser } from "../../shared/types.ts"
-import { CHROME_UA, clearCookieCache, cookieHeader, hasSession, signingCookie, ytSession } from "./session.ts"
+import { CHROME_UA, MOBILE_UA, clearCookieCache, cookieHeader, hasSession, signingCookie, ytSession } from "./session.ts"
 import { sapisidHash } from "./sapisid.ts"
 
 const file = () => path.join(app.getPath("userData"), "auth.json")
@@ -71,14 +71,33 @@ async function refreshProfile(): Promise<void> {
   }
 }
 
+let clientInfoInflight: Promise<{
+  clientVersion: string
+  visitorData: string
+  signatureTimestamp: number
+}> | null = null
+
 /** Live WEB_REMIX client version, visitor data and signature timestamp (DOC §8.2, §16). */
-export async function getClientInfo(): Promise<{
+export function getClientInfo(): Promise<{
   clientVersion: string
   visitorData: string
   signatureTimestamp: number
 }> {
   const persisted = loadPersistedClientInfo()
-  if (persisted) return persisted
+  if (persisted) return Promise.resolve(persisted)
+  // Startup can ask for the shell from the window, auth and BotGuard at once.
+  // One fetch keeps them on the same visitor id, which PoTokens are bound to.
+  clientInfoInflight ??= fetchClientInfo().finally(() => {
+    clientInfoInflight = null
+  })
+  return clientInfoInflight
+}
+
+async function fetchClientInfo(): Promise<{
+  clientVersion: string
+  visitorData: string
+  signatureTimestamp: number
+}> {
   const cookie = await cookieHeader()
   const res = await fetch("https://music.youtube.com/", {
     headers: {
@@ -108,6 +127,45 @@ export async function getClientInfo(): Promise<{
   shellFetchedAt = Date.now()
   persistClientInfo(clientInfo, shellFetchedAt)
   return clientInfo
+}
+
+const CLIENT_SHELLS: Record<string, { url: string; ua: string }> = {
+  WEB: { url: "https://www.youtube.com/", ua: CHROME_UA },
+  MWEB: { url: "https://m.youtube.com/", ua: MOBILE_UA },
+}
+
+const playerClientVersions = new Map<string, string>()
+
+/**
+ * Resolve the InnerTube client identity version for one player client.
+ *
+ * WEB_REMIX ships a "1.<date>.<minor>" version, while WEB and MWEB ship the
+ * same build as "2.<date>.<minor>". Sending a 1.x version with the MWEB client
+ * name makes InnerTube answer 404 "Requested entity was not found", so each
+ * web shell reads its own live version once per process instead.
+ */
+export async function getPlayerClientVersion(clientName: string): Promise<string> {
+  const info = await getClientInfo()
+  const shell = CLIENT_SHELLS[clientName]
+  if (!shell) return info.clientVersion
+  const cached = playerClientVersions.get(clientName)
+  if (cached) return cached
+  try {
+    const html = await fetch(shell.url, {
+      headers: { "User-Agent": shell.ua, "Accept-Language": "en-US,en;q=0.9" },
+    }).then((res) => res.text())
+    const raw = /"INNERTUBE_CLIENT_VERSION"\s*:\s*"([^"]+)"/.exec(html)?.[1]
+    // Some shells advertise canary builds ("2.20261020.01.00-canary_control_…");
+    // only the plain version belongs in the client identity.
+    const version = raw ? /^\d+\.\d+\.\d+\.\d+/.exec(raw)?.[0] : undefined
+    if (version) {
+      playerClientVersions.set(clientName, version)
+      return version
+    }
+  } catch {
+    // Fall back to the shared build number below.
+  }
+  return info.clientVersion.replace(/^1\./, "2.")
 }
 
 /** Reuse the last known shell config across launches; avoids a homepage fetch at startup. */
