@@ -95,7 +95,18 @@ export function installSessionRewriters(): void {
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders }
       // MediaElementSource would otherwise silence cross-origin googlevideo audio;
-      // the renderer's volume normalizer reads through this header.
+      // the renderer's volume normalizer reads through this header. Replace any
+      // upstream value case-insensitively: signed-in WEB_REMIX responses already
+      // send `Access-Control-Allow-Origin: https://music.youtube.com`, and adding
+      // `*` alongside it makes Chromium reject the response.
+      for (const name of Object.keys(responseHeaders)) {
+        if (
+          name.toLowerCase() === "access-control-allow-origin" ||
+          name.toLowerCase() === "access-control-expose-headers"
+        ) {
+          delete responseHeaders[name]
+        }
+      }
       responseHeaders["Access-Control-Allow-Origin"] = ["*"]
       responseHeaders["Access-Control-Expose-Headers"] = ["*"]
       callback({ responseHeaders })
