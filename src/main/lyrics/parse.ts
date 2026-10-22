@@ -70,31 +70,13 @@ export function parseTtml(xml: string): LyricLine[] {
     const begin = parseTtmlTime(attr(attrs, "begin")) ?? 0
     const end = parseTtmlTime(attr(attrs, "end"))
     const voice = attr(attrs, "ttm:agent") ?? attr(attrs, "agent")
-    const leadRuns: TimedRun[] = []
-    const backgroundRuns: TimedRun[] = []
-    const hasSpans = /<span\b/i.test(inner)
+    let leadRuns: TimedRun[] = []
+    let backgroundRuns: TimedRun[] = []
 
-    if (hasSpans) {
-      const tokens = /(<span\b([^>]*)>([\s\S]*?)<\/span>)|([^<]+)/gi
-      for (const token of inner.matchAll(tokens)) {
-        if (token[2] !== undefined || token[3] !== undefined) {
-          const spanAttrs = token[2] ?? ""
-          const role = (attr(spanAttrs, "ttm:role") ?? attr(spanAttrs, "role") ?? "").toLowerCase()
-          if (role.includes("x-translation") || role.includes("x-roman")) continue
-          const text = decodeEntities(stripHtml(token[3] ?? ""))
-          if (!text) continue
-          const run = {
-            raw: text,
-            startMs: parseTtmlTime(attr(spanAttrs, "begin")) ?? begin,
-            endMs: parseTtmlTime(attr(spanAttrs, "end")) ?? end ?? begin,
-          }
-          if (role.includes("x-bg")) backgroundRuns.push(run)
-          else leadRuns.push(run)
-        } else {
-          const text = decodeEntities(token[4] ?? "")
-          if (text) leadRuns.push({ raw: text, startMs: begin, endMs: end ?? begin })
-        }
-      }
+    if (/<span\b/i.test(inner)) {
+      const runs = parseTtmlRuns(inner, begin, end)
+      leadRuns = runs.lead
+      backgroundRuns = runs.background
     }
 
     const words = mergeRuns(leadRuns)
@@ -124,6 +106,67 @@ export function parseTtml(xml: string): LyricLine[] {
     lines.push(line)
   }
   return lines.sort((a, b) => a.timeMs - b.timeMs)
+}
+
+type TtmlSpan = { role: string; begin: number; end: number | null }
+
+/**
+ * Walks a paragraph's inline markup into timed runs. A stack keeps nested
+ * spans' timing and role, so a closing tag can never leak into the lyrics as
+ * text and an x-bg wrapper keeps all of its children in the background.
+ */
+function parseTtmlRuns(
+  inner: string,
+  begin: number,
+  end: number | null,
+): { lead: TimedRun[]; background: TimedRun[] } {
+  const lead: TimedRun[] = []
+  const background: TimedRun[] = []
+  const stack: TtmlSpan[] = []
+  let cursor = 0
+
+  const addText = (raw: string) => {
+    if (!raw) return
+    const text = decodeEntities(raw)
+    if (!text) return
+    const roles = stack.map((span) => span.role).filter(Boolean)
+    if (roles.some((role) => role.includes("x-translation") || role.includes("x-roman"))) return
+    const current = stack.at(-1)
+    const run: TimedRun = {
+      raw: text,
+      startMs: current?.begin ?? begin,
+      endMs: current?.end ?? end ?? begin,
+    }
+    if (roles.some((role) => role.includes("x-bg"))) background.push(run)
+    else lead.push(run)
+  }
+
+  for (const match of inner.matchAll(/<[^>]*>/g)) {
+    const index = match.index ?? 0
+    addText(inner.slice(cursor, index))
+    cursor = index + match[0].length
+    const tag = match[0]
+
+    if (/^<\s*\/\s*span\b/i.test(tag)) {
+      // An unmatched close is harmless; never turn it into lyric text.
+      stack.pop()
+      continue
+    }
+    if (/^<\s*span\b/i.test(tag)) {
+      if (/\/\s*>$/.test(tag)) continue
+      const spanAttrs = tag.replace(/^<\s*span\b/i, "").replace(/\s*>$/, "")
+      const parent = stack.at(-1)
+      stack.push({
+        role: (attr(spanAttrs, "ttm:role") ?? attr(spanAttrs, "role") ?? "").toLowerCase(),
+        begin: parseTtmlTime(attr(spanAttrs, "begin")) ?? parent?.begin ?? begin,
+        end: parseTtmlTime(attr(spanAttrs, "end")) ?? parent?.end ?? end,
+      })
+      continue
+    }
+    if (/^<\s*br\b/i.test(tag)) addText(" ")
+  }
+  addText(inner.slice(cursor))
+  return { lead, background }
 }
 
 export function parseLrc(text: string): LyricLine[] {

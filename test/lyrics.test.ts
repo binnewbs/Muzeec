@@ -35,6 +35,41 @@ test("line-synced TTML stays line-synced", () => {
   assert.equal(parsed.wordSynced, false)
 })
 
+test("TTML handles nested spans without leaking closing tags", () => {
+  const [line] = parseTtml(
+    `<tt><body><div><p begin="1" end="5"><span begin="1" end="2">Family</span> <span begin="2" end="5">ties <span begin="3" end="4">(yeah)</span></span></p></div></body></tt>`,
+  )
+  assert.equal(line.text, "Family ties (yeah)")
+  assert.deepEqual(
+    line.words.map((word) => word.text),
+    ["Family", "ties", "(yeah)"],
+  )
+  assert.ok(!line.text.includes("/span>"))
+})
+
+test("TTML keeps nested background vocals together", () => {
+  const [line] = parseTtml(
+    `<tt><body><div><p begin="6" end="8"><span ttm:role="x-bg" begin="6" end="8"><span begin="6" end="7">back</span> <span begin="7" end="8">ground</span></span></p></div></body></tt>`,
+  )
+  assert.equal(line.text, "")
+  assert.equal(line.background?.text, "back ground")
+  assert.deepEqual(
+    line.background?.words.map((word) => word.text),
+    ["back", "ground"],
+  )
+})
+
+test("TTML ignores stray closing span tags", () => {
+  const [line] = parseTtml(
+    `<tt><body><div><p begin="1" end="2"><span begin="1" end="2">word</span></span></p></div></body></tt>`,
+  )
+  assert.equal(line.text, "word")
+  assert.deepEqual(
+    line.words.map((word) => word.text),
+    ["word"],
+  )
+})
+
 test("JSON envelopes are unwrapped before parsing", () => {
   const lines = parseLyricsPayload(JSON.stringify({ syncedLyrics: "[00:02.00]Hello\n[00:03.00]World" }))
   assert.equal(lines?.[0].text, "Hello")

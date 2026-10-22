@@ -281,6 +281,8 @@ const LyricRow = memo(function LyricRow({
     >
       <div
         className={`flex flex-wrap gap-x-[0.28em] text-xl font-medium leading-snug ${
+          line.alignment === "end" ? "justify-end" : ""
+        } ${
           line.text
             ? active
               ? "text-foreground"
@@ -306,8 +308,8 @@ const LyricRow = memo(function LyricRow({
       {line.background ? (
         <div
           className={`flex flex-wrap gap-x-[0.28em] text-sm leading-snug ${
-            active ? "text-muted-foreground" : "text-muted-foreground/45"
-          }`}
+            line.alignment === "end" ? "justify-end" : ""
+          } ${active ? "text-muted-foreground" : "text-muted-foreground/45"}`}
         >
           {active && line.background.words.length ? (
             line.background.words.map((word, index) => (
