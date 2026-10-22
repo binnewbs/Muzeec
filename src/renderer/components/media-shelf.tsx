@@ -1,6 +1,9 @@
+import type { ReactNode } from "react"
 import type { Shelf as ShelfType } from "@shared/types"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { MediaCard } from "./media-card"
+
+export const MEDIA_GRID_CLASS = "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
 
 export function MediaShelf({ shelf }: { shelf: ShelfType }) {
   return (
@@ -21,11 +24,12 @@ export function MediaShelf({ shelf }: { shelf: ShelfType }) {
   )
 }
 
-export function MediaGrid({ shelf }: { shelf: ShelfType }) {
+export function MediaGrid({ shelf, leading }: { shelf: ShelfType; leading?: ReactNode }) {
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="font-heading text-lg font-medium tracking-tight">{shelf.title}</h2>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {shelf.title ? <h2 className="font-heading text-lg font-medium tracking-tight">{shelf.title}</h2> : null}
+      <div className={MEDIA_GRID_CLASS}>
+        {leading}
         {shelf.items.map((item) => (
           <MediaCard key={item.kind + item.id} item={item} fill />
         ))}

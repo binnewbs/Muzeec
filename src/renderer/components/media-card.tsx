@@ -5,12 +5,16 @@ import { useView } from "@/lib/store/view"
 import { playTrack } from "@/player/controller"
 import { toTrack } from "@/lib/media"
 
-type Props = { item: MediaItem; fill?: boolean }
+type Props = { item: MediaItem; fill?: boolean; onActivate?: () => void }
 
-export function MediaCard({ item, fill = false }: Props) {
+export function MediaCard({ item, fill = false, onActivate }: Props) {
   const navigate = useView((state) => state.navigate)
 
   const activate = () => {
+    if (onActivate) {
+      onActivate()
+      return
+    }
     if (item.kind === "track") {
       void playTrack(toTrack(item))
       return

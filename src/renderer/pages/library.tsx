@@ -1,7 +1,11 @@
 import { useState } from "react"
-import { ChevronRightIcon, CompassIcon, DownloadIcon, PlusIcon } from "lucide-react"
+import type { MediaItem } from "@shared/types"
+import { CompassIcon, DownloadIcon, PlusIcon } from "lucide-react"
+import downloadsCover from "@/assets/downloads-cover.svg"
 import { BrowseView } from "@/components/browse-view"
 import { CreatePlaylistDialog } from "@/components/create-playlist-dialog"
+import { MediaCard } from "@/components/media-card"
+import { MediaGrid } from "@/components/media-shelf"
 import { SpotifyImportDialog } from "@/components/spotify-import-dialog"
 import { PageEmpty } from "@/components/page-states"
 import { Button } from "@/components/ui/button"
@@ -18,31 +22,24 @@ export default function LibraryPage() {
   const [creating, setCreating] = useState(false)
   const [importing, setImporting] = useState(false)
 
-  const downloadedTile = (
-    <button
-      type="button"
-      onClick={() => navigate({ name: "downloads" })}
-      className="flex w-full items-center gap-4 rounded-2xl border bg-muted/20 p-4 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span className="flex size-14 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <DownloadIcon className="size-6" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="font-heading text-lg font-medium tracking-tight">Downloaded Music</span>
-        <span className="truncate text-sm text-muted-foreground">
-          {downloads.length
-            ? `${downloads.length} ${downloads.length === 1 ? "song" : "songs"} saved on this device`
-            : "Save songs to listen without a connection"}
-        </span>
-      </span>
-      <ChevronRightIcon className="size-5 shrink-0 text-muted-foreground" />
-    </button>
+  const downloadsItem: MediaItem = {
+    kind: "playlist",
+    id: "__downloads",
+    title: "Downloaded Music",
+    subtitle: downloads.length
+      ? `Offline • ${downloads.length} ${downloads.length === 1 ? "song" : "songs"}`
+      : "Offline • No songs yet",
+    thumbnail: downloadsCover,
+  }
+  const downloadsCard = (
+    <MediaCard item={downloadsItem} fill onActivate={() => navigate({ name: "downloads" })} />
   )
 
   if (!signedIn) {
     return (
-      <div className="flex flex-col gap-6">
-        {downloadedTile}
+      <div className="flex flex-col gap-8">
+        <h1 className="font-heading text-3xl font-semibold tracking-tight">Library</h1>
+        <MediaGrid shelf={{ title: "", items: [] }} leading={downloadsCard} />
         <PageEmpty
           title="Your library lives on YouTube Music"
           description="Sign in to see your playlists, liked songs and artists."
@@ -63,7 +60,6 @@ export default function LibraryPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {downloadedTile}
       <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
         <CompassIcon className="size-4" />
         <span className="text-sm">Live from your account</span>
@@ -78,7 +74,7 @@ export default function LibraryPage() {
           </Button>
         </div>
       </div>
-      <BrowseView browseId="FEmusic_library_landing" title="Library" grid />
+      <BrowseView browseId="FEmusic_library_landing" title="Library" grid pinned={downloadsCard} />
       <CreatePlaylistDialog
         open={creating}
         onOpenChange={setCreating}
