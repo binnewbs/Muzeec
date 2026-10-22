@@ -5,6 +5,7 @@ import type { AppSettings } from "../../shared/types.ts"
 
 const DEFAULTS: AppSettings = {
   volume: 0.8,
+  volumeNormalization: false,
   quality: "high",
   lowMemory: false,
   crossfadeEnabled: false,

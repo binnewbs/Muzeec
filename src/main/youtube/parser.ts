@@ -1,4 +1,4 @@
-import type { ArtistRef, BrowsePage, MediaItem, MediaKind, PageHeader, Shelf, Track } from "../../shared/types.ts"
+import type { ArtistRef, BrowsePage, MediaItem, MediaKind, PageHeader, Rating, Shelf, Track } from "../../shared/types.ts"
 
 const ITEM_RENDERERS = new Set([
   "musicResponsiveListItemRenderer",
@@ -152,6 +152,14 @@ function findContinuationToken(node: any): string | null {
     if (found) return found
   }
   return null
+}
+
+/** The signed-in account's thumbs state from the watch-next player overlay. */
+export function parseRating(json: any): Rating {
+  const status = findKey(json?.playerOverlays, "likeButtonRenderer")?.likeStatus
+  if (status === "LIKE") return "like"
+  if (status === "DISLIKE") return "dislike"
+  return "none"
 }
 
 /** Radio/autoplay queue from the `next` endpoint (`RDAMVM<videoId>`). */
@@ -353,6 +361,11 @@ function toItem(renderer: any): MediaItem | null {
     album: refs.album,
     year: subtitleParts.find((part) => /^\d{4}$/.test(part)) ?? null,
     musicVideoType,
+    setVideoId:
+      renderer.playlistItemData?.playlistSetVideoId ??
+      renderer.setVideoId ??
+      renderer.playlistSetVideoId ??
+      null,
   }
 }
 

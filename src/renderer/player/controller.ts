@@ -26,6 +26,8 @@ let prefetching = false
 let prefetchToken = 0
 /** True while a crossfade/gapless hand-off is creating the next track. */
 let transitioning = false
+/** Invalidates in-flight like-status reads after a track change or a manual like/unlike. */
+let likeGeneration = 0
 /** How long before the end we start resolving the next track for gapless/crossfade. */
 const PREFETCH_WINDOW = 15
 
@@ -114,6 +116,20 @@ function cancelTransition(): void {
   engine.cancelFade()
 }
 
+async function syncLiked(track: Track): Promise<void> {
+  const generation = likeGeneration
+  if (!useAuth.getState().state.signedIn) return
+  try {
+    const rating = await unwrap(api.likeStatus({ videoId: track.videoId }))
+    if (generation !== likeGeneration) return
+    const player = usePlayer.getState()
+    if (player.current?.videoId !== track.videoId) return
+    player.set({ liked: rating === "like" })
+  } catch {
+    // A failed status read must not interrupt playback; keep the last known state.
+  }
+}
+
 async function startTrack(
   track: Track,
   rememberCurrent = true,
@@ -125,7 +141,11 @@ async function startTrack(
   if (rememberCurrent) remember(track)
   if (historyVideoId && historyVideoId !== track.videoId) finishHistory(engine.currentTime, engine.duration)
   const player = usePlayer.getState()
-  player.set({ current: track, status: "loading", error: null, liked: false, duration: track.duration ?? 0 })
+  likeGeneration++
+  // Replaying the current song keeps its known state until the account check returns.
+  const liked = player.current?.videoId === track.videoId ? player.liked : false
+  player.set({ current: track, status: "loading", error: null, liked, duration: track.duration ?? 0 })
+  void syncLiked(track)
   setMediaSession(track, false)
   let fadeSeconds = 0
   if (preparedMode) {
@@ -389,6 +409,11 @@ export async function likeTrack(track: Track): Promise<void> {
   }
   try {
     await unwrap(api.like({ videoId: track.videoId, rating: "like" }))
+    const player = usePlayer.getState()
+    if (player.current?.videoId === track.videoId) {
+      likeGeneration++
+      player.set({ liked: true })
+    }
     toast.success("Added to liked songs")
   } catch (error) {
     toast.error(errorMessage(error))
@@ -404,6 +429,7 @@ export async function toggleLike(): Promise<void> {
   }
   try {
     await unwrap(api.like({ videoId: current.videoId, rating: liked ? "none" : "like" }))
+    likeGeneration++
     usePlayer.getState().set({ liked: !liked })
   } catch (error) {
     toast.error(errorMessage(error))
@@ -486,6 +512,26 @@ export function initPlayer(): void {
   const { settings } = useSettings.getState()
   engine.setVolume(settings.volume)
   usePlayer.setState({ volume: settings.volume })
+
+  let normalizationEnabled = settings.volumeNormalization
+  engine.setNormalizationEnabled(normalizationEnabled)
+  useSettings.subscribe((state) => {
+    if (state.settings.volumeNormalization === normalizationEnabled) return
+    normalizationEnabled = state.settings.volumeNormalization
+    engine.setNormalizationEnabled(normalizationEnabled)
+  })
+
+  // Restored playback is shown before `auth.init()` finishes; sync the heart as
+  // soon as the signed-in account is known (and clear it again on logout).
+  let wasSignedIn = useAuth.getState().state.signedIn
+  useAuth.subscribe((state) => {
+    if (state.state.signedIn === wasSignedIn) return
+    wasSignedIn = state.state.signedIn
+    likeGeneration++
+    const current = usePlayer.getState().current
+    if (wasSignedIn && current) void syncLiked(current)
+    else usePlayer.getState().set({ liked: false })
+  })
 
   let lastPlaybackPersist = 0
   engine.subscribe(() => {
@@ -603,6 +649,7 @@ function restoreLastPlayback(): void {
 
   const position = Number.isFinite(settings.lastPosition) ? Math.max(0, settings.lastPosition) : 0
   pendingRestore = { track, position }
+  likeGeneration++
   usePlayer.getState().set({
     current: track,
     status: "paused",
@@ -610,6 +657,7 @@ function restoreLastPlayback(): void {
     liked: false,
     duration: track.duration ?? 0,
   })
+  void syncLiked(track)
   engine.setPosition(position)
   setMediaSession(track, false)
 }

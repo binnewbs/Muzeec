@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { appendBrowseItems, parseBrowseFeed, parseQueueTracks, sizedThumbnail } from "../src/main/youtube/parser.ts"
+import { appendBrowseItems, parseBrowseFeed, parseQueueTracks, parseRating, sizedThumbnail } from "../src/main/youtube/parser.ts"
 
 test("thumbnails are resized to the requested display size", () => {
   assert.equal(
@@ -20,6 +20,22 @@ test("thumbnails are resized to the requested display size", () => {
     sizedThumbnail("https://i.ytimg.com/vi/abc/hqdefault.jpg", 320),
     "https://i.ytimg.com/vi/abc/hqdefault.jpg",
   )
+})
+
+test("watch-next parser reads the account's like state", () => {
+  const response = (likeStatus: string) => ({
+    playerOverlays: {
+      playerOverlayRenderer: {
+        actions: [{ likeButtonRenderer: { likeStatus } }],
+      },
+    },
+  })
+
+  assert.equal(parseRating(response("LIKE")), "like")
+  assert.equal(parseRating(response("DISLIKE")), "dislike")
+  assert.equal(parseRating(response("INDIFFERENT")), "none")
+  assert.equal(parseRating({}), "none")
+  assert.equal(parseRating(null), "none")
 })
 
 test("radio parser skips official music videos", () => {
@@ -89,7 +105,7 @@ test("radio parser skips official music videos", () => {
 function playlistItem(videoId: string, title: string) {
   return {
     musicResponsiveListItemRenderer: {
-      playlistItemData: { videoId },
+      playlistItemData: { videoId, playlistSetVideoId: `set-${videoId}` },
       flexColumns: [
         { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: title }] } } },
         { musicResponsiveListItemFlexColumnRenderer: { text: { runs: [{ text: "Artist" }] } } },
@@ -152,6 +168,7 @@ test("playlist pages follow the track list continuation", () => {
   assert.equal(feed.page.title, "Long playlist")
   assert.equal(feed.continuation, "page-2")
   assert.deepEqual(feed.page.shelves[0].items.map((item) => item.id), ["one", "two"])
+  assert.deepEqual(feed.page.shelves[0].items.map((item) => item.setVideoId), ["set-one", "set-two"])
 
   // Real playlist chunks come back as append actions, not continuation shelves.
   const second = {

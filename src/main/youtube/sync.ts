@@ -1,6 +1,14 @@
 import { innertube } from "./innertube.ts"
 import { getScope } from "./auth.ts"
+import { parseRating } from "./parser.ts"
 import type { Rating } from "../../shared/types.ts"
+
+/** The account's current thumbs state for a track, as its watch page reports it. */
+export async function getRating(videoId: string): Promise<Rating> {
+  if (!getScope()) return "none"
+  const response: any = await innertube("next", { videoId })
+  return parseRating(response)
+}
 
 /** Writes are live account operations and must be signed in. Check the body (DOC §11.1). */
 export async function rate(videoId: string, rating: Rating): Promise<void> {
@@ -48,6 +56,46 @@ export async function deletePlaylist(playlist: string): Promise<void> {
   requireScope()
   const response: any = await innertube("playlist/delete", { playlistId: playlistId(playlist) })
   if (response?.error) throw new Error(response.error.message ?? "Could not delete playlist")
+}
+
+export async function renamePlaylist(playlist: string, title: string): Promise<void> {
+  requireScope()
+  const response: any = await innertube("browse/edit_playlist", {
+    playlistId: playlistId(playlist),
+    actions: [{ action: "ACTION_SET_PLAYLIST_NAME", playlistName: title }],
+  })
+  if (response?.error) throw new Error(response.error.message ?? "Could not rename playlist")
+}
+
+/**
+ * Moves one playlist entry relative to its new neighbour. YouTube has no
+ * "move to index" action, so the renderer supplies the entry that will sit
+ * before or after the moved song.
+ */
+export async function movePlaylistItem(
+  playlist: string,
+  setVideoId: string,
+  predecessorSetVideoId: string | null,
+  successorSetVideoId: string | null,
+): Promise<void> {
+  requireScope()
+  if (!predecessorSetVideoId && !successorSetVideoId) throw new Error("Missing playlist position")
+  const action = predecessorSetVideoId
+    ? {
+        action: "ACTION_MOVE_VIDEO_AFTER",
+        setVideoId,
+        movedSetVideoIdPredecessor: predecessorSetVideoId,
+      }
+    : {
+        action: "ACTION_MOVE_VIDEO_BEFORE",
+        setVideoId,
+        movedSetVideoIdSuccessor: successorSetVideoId,
+      }
+  const response: any = await innertube("browse/edit_playlist", {
+    playlistId: playlistId(playlist),
+    actions: [action],
+  })
+  if (response?.error) throw new Error(response.error.message ?? "Could not reorder playlist")
 }
 
 export async function subscribe(channelId: string, subscribed: boolean, params?: string | null): Promise<void> {

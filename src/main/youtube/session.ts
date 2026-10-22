@@ -94,6 +94,8 @@ export function installSessionRewriters(): void {
     { urls: ["*://*.googlevideo.com/*"] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders }
+      // MediaElementSource would otherwise silence cross-origin googlevideo audio;
+      // the renderer's volume normalizer reads through this header.
       responseHeaders["Access-Control-Allow-Origin"] = ["*"]
       responseHeaders["Access-Control-Expose-Headers"] = ["*"]
       callback({ responseHeaders })

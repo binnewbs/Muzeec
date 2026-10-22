@@ -28,9 +28,17 @@ export type MuzeecApi = {
   player: (input: { videoId: string }) => Promise<Result<PlayerDecision>>
   musicTrack: (input: { videoId: string }) => Promise<Result<string>>
   like: (input: { videoId: string; rating: Rating }) => Promise<Result<void>>
+  likeStatus: (input: { videoId: string }) => Promise<Result<Rating>>
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
   playlistDelete: (input: { playlistId: string }) => Promise<Result<void>>
+  playlistRename: (input: { playlistId: string; title: string }) => Promise<Result<void>>
+  playlistMove: (input: {
+    playlistId: string
+    setVideoId: string
+    predecessorSetVideoId?: string | null
+    successorSetVideoId?: string | null
+  }) => Promise<Result<void>>
   spotifyImport: (input: { url: string; jobId: string }) => Promise<Result<SpotifyImportResult>>
   spotifyCancel: (input: { jobId: string }) => Promise<Result<boolean>>
   subscribe: (input: { channelId: string; subscribed: boolean; params?: string | null }) => Promise<Result<void>>

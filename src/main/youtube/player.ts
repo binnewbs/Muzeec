@@ -1,4 +1,5 @@
 import type { PlayerDecision } from "../../shared/types.ts"
+import { integratedLoudness } from "../../shared/loudness.ts"
 import { getSettings } from "../storage/settings.ts"
 import { cacheGet, cacheSet } from "../storage/cache.ts"
 import { VISIONOS_UA, mediaHeadersFor } from "./session.ts"
@@ -170,7 +171,14 @@ function excludeClient(key: string): void {
   exclusions.set(key, Date.now() + EXCLUDE_MS)
 }
 
-type Candidate = { url: string; mimeType: string; bitrate: number; codec: string; client: string }
+type Candidate = {
+  url: string
+  mimeType: string
+  bitrate: number
+  codec: string
+  client: string
+  loudnessLufs: number | null
+}
 
 async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDecision> {
   const info = await getClientInfo()
@@ -263,6 +271,7 @@ async function attemptClient(
         retry: false,
       }
     }
+    const configLoudness = integratedLoudness(response?.playerConfig?.audioConfig ?? {})
 
     const tracking = response?.playbackTracking
     if (tracking) {
@@ -279,7 +288,7 @@ async function attemptClient(
         ? await videoToken(videoId, visitorData)
         : null
     for (const format of audio.slice(0, 2)) {
-      const candidate = await toCandidate(format, client.label, signatureTimestamp, pot)
+      const candidate = await toCandidate(format, client.label, signatureTimestamp, pot, configLoudness)
       if (!candidate) continue
       candidates += 1
       const probeResult = await probe(candidate.url)
@@ -300,6 +309,7 @@ async function attemptClient(
           client: candidate.client,
           expiresAt: Date.now() + 5 * 60 * 60 * 1000,
           duration: Number(response?.videoDetails?.lengthSeconds ?? 0),
+          loudnessLufs: candidate.loudnessLufs,
         },
       }
     }
@@ -349,6 +359,7 @@ async function toCandidate(
   client: string,
   signatureTimestamp: number,
   pot: string | null,
+  configLoudness: number | null,
 ): Promise<Candidate | null> {
   const raw = format.url ?? format.signatureCipher ?? format.cipher
   if (!raw) return null
@@ -360,6 +371,7 @@ async function toCandidate(
     bitrate: Number(format.bitrate ?? 0),
     codec: String(format.mimeType ?? "").split(";")[0] ?? "audio",
     client,
+    loudnessLufs: integratedLoudness(format) ?? (format.isDrc ? null : configLoudness),
   }
 }
 

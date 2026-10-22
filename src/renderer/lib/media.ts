@@ -1,5 +1,10 @@
 import type { MediaItem, Track } from "@shared/types"
 
+/** Playlist browse IDs carry a `VL` prefix on some pages only. */
+export function barePlaylistId(id: string): string {
+  return id.startsWith("VL") ? id.slice(2) : id
+}
+
 export function toTrack(item: MediaItem): Track {
   return { ...item, kind: "track", videoId: item.id }
 }

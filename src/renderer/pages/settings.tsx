@@ -146,6 +146,29 @@ export default function SettingsPage() {
 
             <Card>
               <CardHeader>
+                <CardTitle>Volume</CardTitle>
+                <CardDescription>Keep quiet and loud tracks at the same perceived level.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field orientation="horizontal">
+                    <FieldContent>
+                      <FieldTitle>Volume normalization</FieldTitle>
+                      <FieldDescription>
+                        Standardize playback to -14 LUFS using ITU-R BS.1770 integrated loudness.
+                      </FieldDescription>
+                    </FieldContent>
+                    <Switch
+                      checked={settings.volumeNormalization}
+                      onCheckedChange={(checked) => void update({ volumeNormalization: checked })}
+                    />
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
                 <CardTitle>Transitions</CardTitle>
                 <CardDescription>How one track flows into the next.</CardDescription>
               </CardHeader>

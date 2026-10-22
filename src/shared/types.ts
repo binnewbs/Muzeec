@@ -26,6 +26,8 @@ export type MediaItem = {
   album?: { name: string; id: string | null } | null
   year?: string | null
   musicVideoType?: string | null
+  /** Per-playlist entry key; required for reordering or removing a playlist item. */
+  setVideoId?: string | null
 }
 
 export type Shelf = {
@@ -70,6 +72,8 @@ export type PlayerDecision = {
   client: string
   expiresAt: number
   duration: number
+  /** Integrated loudness in LKFS/LUFS (ITU-R BS.1770); null when unavailable. */
+  loudnessLufs: number | null
 }
 
 export type PlayerError = {
@@ -144,6 +148,7 @@ export type PinnedPlaylist = {
 
 export type AppSettings = {
   volume: number
+  volumeNormalization: boolean
   quality: "high" | "normal"
   lowMemory: boolean
   crossfadeEnabled: boolean

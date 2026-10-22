@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import type { MediaItem, Track } from "@shared/types"
 import { MoreHorizontalIcon, ListPlusIcon, MusicIcon, PauseIcon, PlayIcon } from "lucide-react"
 import { toast } from "sonner"
@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { formatDuration, toTrack } from "@/lib/media"
+import { cn } from "@/lib/utils"
 import { usePlayer } from "@/lib/store/player"
 import { playTracks, playTrack, playTrackNext, addToQueue, likeTrack, toggleLike, togglePlay } from "@/player/controller"
 
@@ -26,6 +27,9 @@ type Props = {
   hasMore?: boolean
   loadingMore?: boolean
   onLoadMore?: () => void
+  /** Enable drag-to-reorder on the rows (playlist pages). */
+  reorderable?: boolean
+  onReorder?: (from: number, to: number) => void
 }
 
 /** Rows rendered before the first scroll extends the window. */
@@ -39,11 +43,17 @@ export function TrackList({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
+  reorderable = false,
+  onReorder,
 }: Props) {
   const currentId = usePlayer((state) => state.current?.videoId)
   const playing = usePlayer((state) => state.status === "playing")
   const signedIn = useAuth((state) => state.state.signedIn)
   const [addTo, setAddTo] = useState<Track | null>(null)
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+  const draggingRef = useRef<number | null>(null)
+  const canReorder = reorderable && Boolean(onReorder)
 
   const collection = useMemo(
     () => context?.filter((item) => item.kind === "track").map(toTrack) ?? [],
@@ -60,6 +70,46 @@ export function TrackList({
   )
 
   const openAddTo = useCallback((track: Track) => setAddTo(track), [])
+
+  const handleDragStart = useCallback(
+    (event: DragEvent<HTMLDivElement>, index: number) => {
+      if (!canReorder) return
+      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.setData("text/plain", String(index))
+      draggingRef.current = index
+      setDraggingIndex(index)
+    },
+    [canReorder],
+  )
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>, index: number) => {
+      if (!canReorder || draggingRef.current === null) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "move"
+      setOverIndex(index)
+    },
+    [canReorder],
+  )
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, index: number) => {
+      event.preventDefault()
+      const from = draggingRef.current
+      draggingRef.current = null
+      setDraggingIndex(null)
+      setOverIndex(null)
+      if (from === null || from === index) return
+      onReorder?.(from, index)
+    },
+    [onReorder],
+  )
+
+  const handleDragEnd = useCallback(() => {
+    draggingRef.current = null
+    setDraggingIndex(null)
+    setOverIndex(null)
+  }, [])
 
   // Bound the DOM: render a window of rows and extend it as the list scrolls.
   const [visibleCount, setVisibleCount] = useState(() => Math.min(items.length, PAGE_SIZE))
@@ -99,12 +149,20 @@ export function TrackList({
         return (
           <TrackRow
             key={`${item.kind}${item.id}-${index}`}
+            index={index}
             item={item}
             active={active}
             playing={active && playing}
             signedIn={signedIn}
+            reorderable={canReorder}
+            dragging={draggingIndex === index}
+            over={overIndex === index && draggingIndex !== index}
             onPlay={play}
             onAddTo={openAddTo}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
           />
         )
       })}
@@ -137,19 +195,35 @@ export function TrackList({
 }
 
 const TrackRow = memo(function TrackRow({
+  index,
   item,
   active,
   playing,
   signedIn,
+  reorderable,
+  dragging,
+  over,
   onPlay,
   onAddTo,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
 }: {
+  index: number
   item: MediaItem
   active: boolean
   playing: boolean
   signedIn: boolean
+  reorderable: boolean
+  dragging: boolean
+  over: boolean
   onPlay: (track: Track) => void
   onAddTo: (track: Track) => void
+  onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void
+  onDragOver: (event: DragEvent<HTMLDivElement>, index: number) => void
+  onDrop: (event: DragEvent<HTMLDivElement>, index: number) => void
+  onDragEnd: () => void
 }) {
   const track = toTrack(item)
   const artistNames = (track.artists ?? []).map((artist) => artist.name.trim().toLowerCase()).filter(Boolean)
@@ -167,8 +241,18 @@ const TrackRow = memo(function TrackRow({
 
   return (
     <div
-      className="list-row group flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-muted/70 data-[active=true]:bg-muted/50"
+      className={cn(
+        "list-row group flex items-center gap-2 rounded-xl px-2 py-1.5 hover:bg-muted/70 data-[active=true]:bg-muted/50",
+        reorderable && "cursor-grab active:cursor-grabbing",
+        dragging && "opacity-50",
+        over && "ring-1 ring-ring",
+      )}
       data-active={active}
+      draggable={reorderable}
+      onDragStart={(event) => onDragStart(event, index)}
+      onDragOver={(event) => onDragOver(event, index)}
+      onDrop={(event) => onDrop(event, index)}
+      onDragEnd={onDragEnd}
     >
       <button
         type="button"
@@ -184,6 +268,7 @@ const TrackRow = memo(function TrackRow({
             decoding="async"
             width={80}
             height={80}
+            draggable={false}
             className="size-full object-cover"
           />
         ) : (

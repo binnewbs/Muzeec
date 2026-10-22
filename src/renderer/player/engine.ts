@@ -1,8 +1,10 @@
 import type { PlayerDecision, Track } from "@shared/types"
+import { normalizationGain } from "@shared/loudness"
 import { fadeGain } from "./fade.ts"
 
 type Listener = () => void
 type Fade = { element: HTMLAudioElement; startPos: number; duration: number }
+type AudioGraph = { source: MediaElementAudioSourceNode; gain: GainNode; limiter: DynamicsCompressorNode }
 
 const FADE_TICK_MS = 50
 
@@ -24,6 +26,11 @@ class AudioEngine {
   private position = 0
   private userVolume = 1
   private muted = false
+  private normalizationEnabled = false
+  private audioContext: AudioContext | null = null
+  private graphs = new Map<HTMLAudioElement, AudioGraph>()
+  private graphFailures = new WeakSet<HTMLAudioElement>()
+  private loudnessLufs = new Map<HTMLAudioElement, number | null>()
   /** Set once per track by the controller; fires when the primary track reaches its end. */
   onEnded: (() => void) | null = null
   /** Set once by the controller; fires when the primary stream refuses to play. */
@@ -35,6 +42,9 @@ class AudioEngine {
   }
 
   private wire(element: HTMLAudioElement): void {
+    // googlevideo is CORS-wrapped by the main process, so the media element can
+    // feed a Web Audio graph for loudness normalization.
+    element.crossOrigin = "anonymous"
     element.addEventListener("timeupdate", () => this.onTimeUpdate(element))
     element.addEventListener("durationchange", () => this.onDurationChange(element))
     element.addEventListener("play", () => this.onElementPlay(element))
@@ -66,6 +76,7 @@ class AudioEngine {
   }
 
   load(decision: PlayerDecision): Promise<void> {
+    this.setLoudness(this.audio, decision.loudnessLufs)
     this.audio.src = decision.url
     this.audio.load()
     return new Promise((resolve, reject) => {
@@ -98,6 +109,7 @@ class AudioEngine {
     }
     if (this.standbyUrl === decision.url && this.standby.readyState >= 3) return Promise.resolve()
     this.standbyUrl = decision.url
+    this.setLoudness(this.standby, decision.loudnessLufs)
     this.standby.src = decision.url
     this.standby.load()
     return new Promise((resolve, reject) => {
@@ -174,6 +186,9 @@ class AudioEngine {
   }
 
   async play(): Promise<void> {
+    if (this.audioContext && this.audioContext.state !== "running") {
+      await this.audioContext.resume().catch(() => undefined)
+    }
     await this.audio.play()
   }
 
@@ -202,6 +217,79 @@ class AudioEngine {
     this.refreshGain()
   }
 
+  /** Enables metadata-driven -14 LUFS normalization without interrupting playback. */
+  setNormalizationEnabled(enabled: boolean): void {
+    if (this.normalizationEnabled === enabled) return
+    this.normalizationEnabled = enabled
+    if (enabled) {
+      const context = this.ensureContext()
+      if (context) void context.resume().catch(() => undefined)
+      for (const element of [this.audio, this.standby, this.fading]) {
+        if (element) this.ensureGraph(element)
+      }
+    }
+    for (const element of this.graphs.keys()) this.applyNormalizationGain(element)
+  }
+
+  private setLoudness(element: HTMLAudioElement, lufs: number | null): void {
+    this.loudnessLufs.set(element, typeof lufs === "number" && Number.isFinite(lufs) ? lufs : null)
+    if (this.normalizationEnabled) this.ensureGraph(element)
+    this.applyNormalizationGain(element, true)
+  }
+
+  private ensureContext(): AudioContext | null {
+    if (this.audioContext) return this.audioContext
+    try {
+      this.audioContext = new AudioContext()
+      return this.audioContext
+    } catch (error) {
+      console.warn("Web Audio is unavailable; volume normalization is off", error)
+      return null
+    }
+  }
+
+  private ensureGraph(element: HTMLAudioElement): void {
+    if (this.graphs.has(element) || this.graphFailures.has(element)) return
+    const context = this.ensureContext()
+    if (!context) return
+    try {
+      const source = context.createMediaElementSource(element)
+      const gain = context.createGain()
+      const limiter = context.createDynamicsCompressor()
+      // Only catches peaks when a quiet track is boosted above full scale.
+      limiter.threshold.value = -1
+      limiter.knee.value = 0
+      limiter.ratio.value = 20
+      limiter.attack.value = 0.003
+      limiter.release.value = 0.25
+      source.connect(gain)
+      gain.connect(limiter)
+      limiter.connect(context.destination)
+      this.graphs.set(element, { source, gain, limiter })
+    } catch (error) {
+      this.graphFailures.add(element)
+      console.warn("Could not route audio through Web Audio; volume normalization is off", error)
+    }
+  }
+
+  private applyNormalizationGain(element: HTMLAudioElement, immediate = false): void {
+    const graph = this.graphs.get(element)
+    const context = this.audioContext
+    if (!graph || !context) return
+    const lufs = this.loudnessLufs.get(element) ?? null
+    const target = this.normalizationEnabled ? normalizationGain(lufs) : 1
+    // Attenuation cannot clip, so only boost paths need the lower threshold.
+    graph.limiter.threshold.value = target > 1 ? -1 : 0
+    const now = context.currentTime
+    graph.gain.gain.cancelScheduledValues(now)
+    if (immediate) {
+      graph.gain.gain.setValueAtTime(target, now)
+      return
+    }
+    graph.gain.gain.setValueAtTime(graph.gain.gain.value, now)
+    graph.gain.gain.linearRampToValueAtTime(target, now + 0.15)
+  }
+
   stop(): void {
     this.clearPrepared()
     this.cancelFade()
@@ -217,6 +305,21 @@ class AudioEngine {
     element.pause()
     element.removeAttribute("src")
     element.load()
+    this.teardownGraph(element)
+  }
+
+  private teardownGraph(element: HTMLAudioElement): void {
+    const graph = this.graphs.get(element)
+    if (!graph) return
+    try {
+      graph.source.disconnect()
+      graph.gain.disconnect()
+      graph.limiter.disconnect()
+    } catch {
+      // The context may already be closed during app teardown.
+    }
+    this.graphs.delete(element)
+    this.loudnessLufs.delete(element)
   }
 
   private onTimeUpdate(element: HTMLAudioElement): void {
@@ -233,6 +336,9 @@ class AudioEngine {
 
   private onElementPlay(element: HTMLAudioElement): void {
     if (element !== this.audio) return
+    if (this.audioContext && this.audioContext.state === "suspended") {
+      void this.audioContext.resume().catch(() => undefined)
+    }
     this.startTicker()
     if (this.fade && this.fade.element.paused) this.fade.element.play().catch(() => undefined)
   }

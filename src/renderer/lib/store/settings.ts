@@ -5,6 +5,7 @@ import { clearQueryCache } from "@/lib/query"
 
 const DEFAULTS: AppSettings = {
   volume: 0.8,
+  volumeNormalization: false,
   quality: "high",
   lowMemory: false,
   crossfadeEnabled: false,

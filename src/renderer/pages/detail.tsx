@@ -4,13 +4,16 @@ import type { BrowseChunk, BrowsePage, MediaItem, Track } from "@shared/types"
 import { toast } from "sonner"
 import { api, errorMessage, unwrap } from "@/lib/ipc"
 import { useIpcQuery } from "@/lib/query"
-import { tracksOf } from "@/lib/media"
+import { barePlaylistId, tracksOf } from "@/lib/media"
+import { useAuth } from "@/lib/store/auth"
 import { invalidateLibrary, useLibraryRevision } from "@/lib/store/library"
+import { useSettings } from "@/lib/store/settings"
 import { useView } from "@/lib/store/view"
 import { playTracks } from "@/player/controller"
 import { Button } from "@/components/ui/button"
 import { AddSongsDialog } from "@/components/add-songs-dialog"
 import { ArtistLinks } from "@/components/artist-links"
+import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -50,6 +53,7 @@ type ShelfEntry = { shelf: BrowsePage["shelves"][number]; index: number }
 
 export default function DetailPage({ id, kind, title }: { id: string; kind: "album" | "artist" | "playlist"; title?: string }) {
   const back = useView((state) => state.back)
+  const signedIn = useAuth((state) => state.state.signedIn)
   const browseId = id.startsWith("VL") || kind !== "playlist" ? id : `VL${id}`
   const isPlaylist = kind === "playlist"
   const revision = useLibraryRevision((state) => state.revision)
@@ -63,6 +67,11 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
   const [addingSongs, setAddingSongs] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState("")
+  const [renaming, setRenaming] = useState(false)
+  const [moving, setMoving] = useState(false)
+  const cancelTitleRef = useRef(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingAll, setLoadingAll] = useState(false)
   const loadingMoreRef = useRef(false)
@@ -160,14 +169,136 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
       data.shelves.findIndex((shelf) => shelf.items.length > 0 && isTrackShelf(shelf))
     )
   }, [data])
+  const canReorder = isPlaylist && sortBy === "added" && sortDir === "asc"
 
-  if (loading) return <PageLoading />
+  /** Moves a song within the loaded part of the playlist, then syncs YouTube. */
+  const moveTrack = useCallback(
+    (from: number, to: number): void => {
+      if (!canReorder || moving || !data) return
+      const shelfIndex = targetShelfIndex
+      if (shelfIndex < 0 || shelfIndex >= data.shelves.length) return
+      const items = data.shelves[shelfIndex].items
+      if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return
+      const next = [...items]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      const setVideoId = moved.setVideoId
+      if (!setVideoId) {
+        toast.error("This song can't be reordered")
+        return
+      }
+      const predecessor = to > 0 ? (next[to - 1].setVideoId ?? null) : null
+      const successor = to < next.length - 1 ? (next[to + 1].setVideoId ?? null) : null
+      if (!predecessor && !successor) return
+
+      const previous = data
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              shelves: current.shelves.map((shelf, index) =>
+                index === shelfIndex ? { ...shelf, items: next } : shelf,
+              ),
+            }
+          : current,
+      )
+      setMoving(true)
+      void (async () => {
+        try {
+          await unwrap(
+            api.playlistMove({
+              playlistId: id,
+              setVideoId,
+              predecessorSetVideoId: predecessor,
+              successorSetVideoId: successor,
+            }),
+          )
+        } catch (moveError) {
+          setData((current) =>
+            current
+              ? {
+                  ...current,
+                  shelves: current.shelves.map((shelf, index) =>
+                    index === shelfIndex
+                      ? { ...shelf, items: previous.shelves[shelfIndex]?.items ?? shelf.items }
+                      : shelf,
+                  ),
+                }
+              : current,
+          )
+          toast.error(errorMessage(moveError))
+        } finally {
+          setMoving(false)
+        }
+      })()
+    },
+    [canReorder, data, id, moving, setData, targetShelfIndex],
+  )
+
+  if (loading && !data) return <PageLoading />
   if (error) return <PageError message={error} retry={reload} />
   if (!data) return null
 
   const safeTitle = isBrowseId(title) ? "" : (title || "")
   const displayTitle = isBrowseId(data.title) ? (safeTitle || "Untitled") : (data.title || safeTitle || "Untitled")
   const hasContinuation = Boolean(data.continuation)
+
+  const canRename = isPlaylist && signedIn
+
+  const startRename = (): void => {
+    if (!canRename || renaming) return
+    cancelTitleRef.current = false
+    setTitleDraft(displayTitle)
+    setEditingTitle(true)
+  }
+
+  const cancelRename = (): void => {
+    cancelTitleRef.current = true
+    setEditingTitle(false)
+  }
+
+  const commitRename = async (): Promise<void> => {
+    if (cancelTitleRef.current) {
+      cancelTitleRef.current = false
+      setEditingTitle(false)
+      return
+    }
+    if (renaming) return
+    const next = titleDraft.trim()
+    if (!next || next === displayTitle) {
+      setEditingTitle(false)
+      return
+    }
+    setRenaming(true)
+    try {
+      await unwrap(api.playlistRename({ playlistId: id, title: next }))
+      setData((previous) =>
+        previous
+          ? {
+              ...previous,
+              title: next,
+              header: previous.header ? { ...previous.header, title: next } : previous.header,
+            }
+          : previous,
+      )
+      const pinned = useSettings.getState().settings.pinnedPlaylists
+      const key = barePlaylistId(id)
+      if (pinned.some((entry) => barePlaylistId(entry.id) === key)) {
+        void useSettings.getState().update({
+          pinnedPlaylists: pinned.map((entry) =>
+            barePlaylistId(entry.id) === key ? { ...entry, title: next } : entry,
+          ),
+        })
+      }
+      invalidateLibrary()
+      toast.success("Playlist renamed")
+      setEditingTitle(false)
+    } catch (renameError) {
+      toast.error(errorMessage(renameError))
+    } finally {
+      setRenaming(false)
+    }
+  }
 
   const remove = () => setConfirmingDelete(true)
 
@@ -244,7 +375,40 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
           <div className="flex min-w-0 flex-col gap-2">
             <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">{kind}</span>
             <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance">
-              {displayTitle}
+              {editingTitle ? (
+                <Input
+                  autoFocus
+                  value={titleDraft}
+                  maxLength={150}
+                  disabled={renaming}
+                  aria-label="Playlist name"
+                  className="h-auto max-w-xl rounded-xl px-2 py-0.5 font-heading text-3xl font-semibold tracking-tight"
+                  onChange={(event) => setTitleDraft(event.target.value)}
+                  onFocus={(event) => event.currentTarget.select()}
+                  onBlur={() => void commitRename()}
+                  onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return
+                    if (event.key === "Enter") {
+                      event.preventDefault()
+                      void commitRename()
+                    } else if (event.key === "Escape") {
+                      event.preventDefault()
+                      cancelRename()
+                    }
+                  }}
+                />
+              ) : canRename ? (
+                <button
+                  type="button"
+                  title="Click to rename"
+                  className="cursor-text rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={startRename}
+                >
+                  {displayTitle}
+                </button>
+              ) : (
+                displayTitle
+              )}
             </h1>
             {data.header?.artists?.length ? (
               <ArtistLinks
@@ -346,6 +510,8 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
               hasMore={isMain && hasContinuation}
               loadingMore={isMain && loadingMore}
               onLoadMore={isMain ? loadMore : undefined}
+              reorderable={isMain && canReorder}
+              onReorder={isMain && canReorder ? moveTrack : undefined}
             />
           </section>
         )

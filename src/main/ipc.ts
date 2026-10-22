@@ -7,7 +7,7 @@ import { innertube } from "./youtube/innertube.ts"
 import { parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
 import { clearPlayerCaches, resolvePlayer, resolveMusicTrack, PlayerFailure } from "./youtube/player.ts"
 import { trackHistory, flushHistory } from "./youtube/history.ts"
-import { rate, addToPlaylist, createPlaylist, deletePlaylist, subscribe } from "./youtube/sync.ts"
+import { rate, getRating, addToPlaylist, createPlaylist, deletePlaylist, movePlaylistItem, renamePlaylist, subscribe } from "./youtube/sync.ts"
 import { flushSettings, getSettings, updateSettings } from "./storage/settings.ts"
 import { cacheClear, cacheGet, cacheSet, cacheTrim } from "./storage/cache.ts"
 import { lyricsProviderInfo, lookupLyrics } from "./lyrics/engine.ts"
@@ -196,6 +196,11 @@ export function registerIpc(): void {
     }
   })
 
+  ipcMain.handle("yt:likeStatus", async (_event, input) => {
+    const { videoId } = record(input)
+    return getRating(text(videoId, "videoId", 32))
+  })
+
   ipcMain.handle("yt:like", async (_event, input) => {
     const { videoId, rating } = record(input)
     const id = text(videoId, "videoId", 32)
@@ -226,6 +231,34 @@ export function registerIpc(): void {
   ipcMain.handle("yt:playlistDelete", async (_event, input) => {
     const { playlistId } = record(input)
     await deletePlaylist(text(playlistId, "playlistId", 200))
+    cacheClear("browse:")
+  })
+
+  ipcMain.handle("yt:playlistRename", async (_event, input) => {
+    const { playlistId, title } = record(input)
+    const name = text(title, "title", 150).trim()
+    if (!name) throw new Error("Empty playlist title")
+    await renamePlaylist(text(playlistId, "playlistId", 200), name)
+    cacheClear("browse:")
+  })
+
+  ipcMain.handle("yt:playlistMove", async (_event, input) => {
+    const { playlistId, setVideoId, predecessorSetVideoId, successorSetVideoId } = record(input)
+    const predecessor =
+      predecessorSetVideoId === undefined || predecessorSetVideoId === null
+        ? null
+        : text(predecessorSetVideoId, "predecessorSetVideoId", 200)
+    const successor =
+      successorSetVideoId === undefined || successorSetVideoId === null
+        ? null
+        : text(successorSetVideoId, "successorSetVideoId", 200)
+    if (!predecessor && !successor) throw new Error("Invalid playlist position")
+    await movePlaylistItem(
+      text(playlistId, "playlistId", 200),
+      text(setVideoId, "setVideoId", 200),
+      predecessor,
+      successor,
+    )
     cacheClear("browse:")
   })
 
@@ -321,6 +354,7 @@ export function registerIpc(): void {
     const next: Partial<AppSettings> = {}
     let lyricsChanged = false
     if (typeof input.volume === "number") next.volume = Math.min(1, Math.max(0, input.volume))
+    if (typeof input.volumeNormalization === "boolean") next.volumeNormalization = input.volumeNormalization
     if (input.quality === "high" || input.quality === "normal") next.quality = input.quality
     if (typeof input.lowMemory === "boolean") next.lowMemory = input.lowMemory
     if (typeof input.crossfadeEnabled === "boolean") next.crossfadeEnabled = input.crossfadeEnabled
