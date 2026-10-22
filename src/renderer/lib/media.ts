@@ -20,6 +20,17 @@ export function formatDuration(seconds: number | undefined): string {
   return `${m}:${String(s).padStart(2, "0")}`
 }
 
+/** Human-readable collection length, e.g. "1 hr 24 min". */
+export function formatTotalDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ""
+  const minutes = Math.max(1, Math.round(seconds / 60))
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours && rest) return `${hours} hr ${rest} min`
+  if (hours) return `${hours} hr`
+  return `${rest} min`
+}
+
 export function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00"
   return formatDuration(seconds)

@@ -1,5 +1,13 @@
 import type { DownloadedTrack, DownloadProgress, Track } from "@shared/types"
 
+/** Reserved pinned-playlist entry for the offline collection. */
+export const DOWNLOADS_PIN_ID = "muzeec:downloads"
+export const DOWNLOADS_PIN_TITLE = "Downloaded Music"
+
+export function isDownloadsPin(id: string): boolean {
+  return id === DOWNLOADS_PIN_ID
+}
+
 export function downloadedToTrack(item: DownloadedTrack): Track {
   return {
     kind: "track",

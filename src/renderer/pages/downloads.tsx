@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import type { DownloadProgress } from "@shared/types"
-import { ArrowLeftIcon, ArrowUpDownIcon, DownloadIcon, PlayIcon } from "lucide-react"
+import { ArrowLeftIcon, ArrowUpDownIcon, DownloadIcon, PinIcon, PinOffIcon, PlayIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DownloadsArtwork } from "@/components/downloads-artwork"
 import { Progress } from "@/components/ui/progress"
@@ -15,8 +15,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { downloadLabel, downloadPercent, downloadedToTrack, formatBytes } from "@/lib/downloads"
+import {
+  DOWNLOADS_PIN_ID,
+  DOWNLOADS_PIN_TITLE,
+  downloadLabel,
+  downloadPercent,
+  downloadedToTrack,
+  formatBytes,
+  isDownloadsPin,
+} from "@/lib/downloads"
+import { formatTotalDuration } from "@/lib/media"
 import { useDownloads } from "@/lib/store/downloads"
+import { useSettings } from "@/lib/store/settings"
 import { useView } from "@/lib/store/view"
 import { playTracks } from "@/player/controller"
 
@@ -25,6 +35,7 @@ export default function DownloadsPage() {
   const active = useDownloads((state) => state.active)
   const back = useView((state) => state.back)
   const navigate = useView((state) => state.navigate)
+  const pinned = useSettings((state) => state.settings.pinnedPlaylists.some((entry) => isDownloadsPin(entry.id)))
   const [sortBy, setSortBy] = useState<"downloaded" | "title">("downloaded")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
@@ -42,6 +53,7 @@ export default function DownloadsPage() {
   }, [tracks, sortBy, sortDir])
 
   const totalSize = useMemo(() => items.reduce((sum, item) => sum + item.size, 0), [items])
+  const totalDuration = useMemo(() => items.reduce((sum, item) => sum + (item.duration ?? 0), 0), [items])
   const activeItems = useMemo(() => {
     const unique = new Map<string, DownloadProgress>()
     for (const progress of Object.values(active)) {
@@ -53,6 +65,16 @@ export default function DownloadsPage() {
 
   const playAll = () => {
     if (sortedTracks.length) void playTracks(sortedTracks, 0)
+  }
+
+  const togglePinned = () => {
+    const list = useSettings.getState().settings.pinnedPlaylists
+    const exists = list.some((entry) => isDownloadsPin(entry.id))
+    void useSettings.getState().update({
+      pinnedPlaylists: exists
+        ? list.filter((entry) => !isDownloadsPin(entry.id))
+        : [...list, { id: DOWNLOADS_PIN_ID, title: DOWNLOADS_PIN_TITLE, thumbnail: null }],
+    })
   }
 
   return (
@@ -69,7 +91,9 @@ export default function DownloadsPage() {
             <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance">Downloaded Music</h1>
             <span className="text-sm text-muted-foreground">
               {items.length
-                ? `${items.length} ${items.length === 1 ? "song" : "songs"} · ${formatBytes(totalSize)}`
+                ? `${items.length} ${items.length === 1 ? "song" : "songs"}${
+                    totalDuration ? ` · ${formatTotalDuration(totalDuration)}` : ""
+                  } · ${formatBytes(totalSize)}`
                 : "No songs yet"}
             </span>
             <div className="flex flex-wrap gap-2">
@@ -110,6 +134,10 @@ export default function DownloadsPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null}
+              <Button variant="ghost" className="w-fit" onClick={togglePinned}>
+                {pinned ? <PinOffIcon data-icon="inline-start" /> : <PinIcon data-icon="inline-start" />}
+                {pinned ? "Unpin from sidebar" : "Pin to sidebar"}
+              </Button>
             </div>
           </div>
         </div>
@@ -121,9 +149,7 @@ export default function DownloadsPage() {
           <div className="flex flex-col gap-1">
             {activeItems.map((progress) => (
               <div key={progress.videoId} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-zinc-500">
-                  <DownloadIcon className="size-4" strokeWidth={1.5} />
-                </span>
+                <DownloadsArtwork className="size-10 shrink-0 rounded-md" iconClassName="size-4" />
                 <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                   <span className="truncate text-sm font-medium">{progress.title}</span>
                   <Progress

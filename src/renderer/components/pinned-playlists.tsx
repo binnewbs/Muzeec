@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import type { MediaItem } from "@shared/types"
-import { LibraryIcon, ListMusicIcon, PinIcon, PinOffIcon } from "lucide-react"
+import { DownloadIcon, LibraryIcon, ListMusicIcon, PinIcon, PinOffIcon } from "lucide-react"
 import { api, unwrap } from "@/lib/ipc"
+import { DOWNLOADS_PIN_ID, DOWNLOADS_PIN_TITLE, isDownloadsPin } from "@/lib/downloads"
 import { barePlaylistId } from "@/lib/media"
 import { useIpcQuery } from "@/lib/query"
 import { cn } from "@/lib/utils"
@@ -64,8 +65,10 @@ export function PinnedPlaylists() {
     [data],
   )
   const pinnedIds = useMemo(() => new Set(pinned.map((entry) => barePlaylistId(entry.id))), [pinned])
+  const downloadsPinned = pinnedIds.has(DOWNLOADS_PIN_ID)
   const activeId = current.name === "playlist" ? barePlaylistId(current.id) : null
   const loadingList = open && !error && (loading || !data)
+  const visiblePinned = signedIn ? pinned : pinned.filter((entry) => isDownloadsPin(entry.id))
 
   // Backfill covers (and renamed titles) for playlists pinned before thumbnails were stored.
   useEffect(() => {
@@ -84,7 +87,7 @@ export function PinnedPlaylists() {
     if (changed) void useSettings.getState().update({ pinnedPlaylists: next })
   }, [playlists])
 
-  if (!signedIn) return null
+  if (!signedIn && !downloadsPinned) return null
 
   const toggle = (playlist: { id: string; title: string; thumbnail: string | null }): void => {
     const list = useSettings.getState().settings.pinnedPlaylists
@@ -112,38 +115,56 @@ export function PinnedPlaylists() {
     <SidebarGroup>
       <SidebarGroupLabel>Playlists</SidebarGroupLabel>
       <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger render={<SidebarGroupAction aria-label="Pin playlists" />}>
+        <DropdownMenuTrigger render={<SidebarGroupAction aria-label="Pin to sidebar" />}>
           <PinIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent side="right" align="start" className="w-64 scrollbar-subtle">
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Pin playlists</DropdownMenuLabel>
-            {loadingList ? (
-              <DropdownMenuItem disabled>
-                <Spinner />
-                Loading playlists…
-              </DropdownMenuItem>
-            ) : error ? (
-              <DropdownMenuItem disabled className="truncate">
-                {error}
-              </DropdownMenuItem>
-            ) : playlists.length ? (
-              <div className="scrollbar-subtle max-h-[min(16rem,calc(var(--available-height)-7rem))] overflow-y-auto overscroll-contain">
-                {playlists.map((playlist: MediaItem) => (
-                  <DropdownMenuCheckboxItem
-                    key={playlist.id}
-                    checked={pinnedIds.has(barePlaylistId(playlist.id))}
-                    closeOnClick={false}
-                    onCheckedChange={() => toggle(playlist)}
-                  >
-                    <span className="truncate">{playlist.title}</span>
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </div>
-            ) : (
-              <DropdownMenuItem disabled>No playlists yet</DropdownMenuItem>
-            )}
+            <DropdownMenuLabel>Pin to sidebar</DropdownMenuLabel>
+            <DropdownMenuCheckboxItem
+              checked={downloadsPinned}
+              closeOnClick={false}
+              onCheckedChange={() =>
+                toggle({ id: DOWNLOADS_PIN_ID, title: DOWNLOADS_PIN_TITLE, thumbnail: null })
+              }
+            >
+              <DownloadIcon />
+              <span>Downloaded Music</span>
+            </DropdownMenuCheckboxItem>
           </DropdownMenuGroup>
+          {signedIn ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Pin playlists</DropdownMenuLabel>
+                {loadingList ? (
+                  <DropdownMenuItem disabled>
+                    <Spinner />
+                    Loading playlists…
+                  </DropdownMenuItem>
+                ) : error ? (
+                  <DropdownMenuItem disabled className="truncate">
+                    {error}
+                  </DropdownMenuItem>
+                ) : playlists.length ? (
+                  <div className="scrollbar-subtle max-h-[min(16rem,calc(var(--available-height)-11rem))] overflow-y-auto overscroll-contain">
+                    {playlists.map((playlist: MediaItem) => (
+                      <DropdownMenuCheckboxItem
+                        key={playlist.id}
+                        checked={pinnedIds.has(barePlaylistId(playlist.id))}
+                        closeOnClick={false}
+                        onCheckedChange={() => toggle(playlist)}
+                      >
+                        <span className="truncate">{playlist.title}</span>
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </div>
+                ) : (
+                  <DropdownMenuItem disabled>No playlists yet</DropdownMenuItem>
+                )}
+              </DropdownMenuGroup>
+            </>
+          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => navigate({ name: "library" })}>
@@ -155,10 +176,10 @@ export function PinnedPlaylists() {
       </DropdownMenu>
       <SidebarGroupContent>
         <SidebarMenu>
-          {pinned.map((playlist) => (
+          {visiblePinned.map((playlist) => (
             <SidebarMenuItem
               key={playlist.id}
-              draggable
+              draggable={signedIn}
               onDragStart={(event) => {
                 event.dataTransfer.effectAllowed = "move"
                 event.dataTransfer.setData("text/plain", playlist.id)
@@ -193,11 +214,21 @@ export function PinnedPlaylists() {
               <ContextMenu>
                 <ContextMenuTrigger className="block w-full">
                   <SidebarMenuButton
-                    isActive={activeId === barePlaylistId(playlist.id)}
-                    tooltip={playlist.title}
-                    onClick={() => navigate({ name: "playlist", id: playlist.id, title: playlist.title })}
+                    isActive={
+                      isDownloadsPin(playlist.id)
+                        ? current.name === "downloads"
+                        : activeId === barePlaylistId(playlist.id)
+                    }
+                    tooltip={isDownloadsPin(playlist.id) ? DOWNLOADS_PIN_TITLE : playlist.title}
+                    onClick={() =>
+                      isDownloadsPin(playlist.id)
+                        ? navigate({ name: "downloads" })
+                        : navigate({ name: "playlist", id: playlist.id, title: playlist.title })
+                    }
                   >
-                    {playlist.thumbnail ? (
+                    {isDownloadsPin(playlist.id) ? (
+                      <DownloadIcon />
+                    ) : playlist.thumbnail ? (
                       <img
                         src={playlist.thumbnail}
                         alt=""
@@ -210,7 +241,7 @@ export function PinnedPlaylists() {
                     ) : (
                       <ListMusicIcon />
                     )}
-                    <span>{playlist.title}</span>
+                    <span>{isDownloadsPin(playlist.id) ? DOWNLOADS_PIN_TITLE : playlist.title}</span>
                   </SidebarMenuButton>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
