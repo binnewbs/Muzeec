@@ -409,6 +409,15 @@ export function seek(seconds: number): void {
   void api.setSettings({ lastPosition: seconds })
 }
 
+/** Moves the playhead by `delta` seconds, clamped to the current track. */
+export function seekBy(delta: number): void {
+  if (!Number.isFinite(delta) || delta === 0) return
+  const position = pendingRestore ? pendingRestore.position : engine.currentTime
+  const duration = usePlayer.getState().duration || engine.duration
+  const target = Math.max(0, position + delta)
+  seek(duration > 0 ? Math.min(target, duration) : target)
+}
+
 export function setVolume(volume: number, muted = usePlayer.getState().muted): void {
   usePlayer.getState().set({ volume, muted })
   engine.setVolume(volume, muted)

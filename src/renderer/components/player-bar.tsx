@@ -37,6 +37,7 @@ import { useIncrementalList } from "@/lib/incremental"
 import { ArtistLinks } from "@/components/artist-links"
 import { AddToPlaylistDialog } from "@/components/add-to-playlist"
 import { LyricsPanel } from "@/components/lyrics-panel"
+import { SeekBar } from "@/components/seek-bar"
 import { useAuth } from "@/lib/store/auth"
 import { useDownloads } from "@/lib/store/downloads"
 import { downloadFor, downloadLabel } from "@/lib/downloads"
@@ -187,17 +188,16 @@ export function PlayerBar() {
           </div>
           <div className="hidden w-full items-center gap-2 md:flex">
             <span className="w-10 text-right text-[11px] tabular-nums text-muted-foreground">{formatTime(display)}</span>
-            <Slider
-              min={0}
-              max={Math.max(duration, 1)}
+            <SeekBar
               value={display}
+              max={duration}
               disabled={!current || !duration}
-              onValueChange={(value) => setScrubbing(typeof value === "number" ? value : 0)}
-              onValueCommitted={(value) => {
-                seek(typeof value === "number" ? value : 0)
+              onScrub={setScrubbing}
+              onCommit={(value) => {
+                seek(value)
                 setScrubbing(null)
               }}
-              aria-label="Seek"
+              onCancel={() => setScrubbing(null)}
             />
             <span className="w-10 text-[11px] tabular-nums text-muted-foreground">{formatTime(duration)}</span>
           </div>
@@ -252,17 +252,16 @@ export function PlayerBar() {
       </div>
       <div className="flex items-center gap-2 px-4 pb-2 md:hidden">
         <span className="w-9 text-right text-[11px] tabular-nums text-muted-foreground">{formatTime(display)}</span>
-        <Slider
-          min={0}
-          max={Math.max(duration, 1)}
+        <SeekBar
           value={display}
+          max={duration}
           disabled={!current || !duration}
-          onValueChange={(value) => setScrubbing(typeof value === "number" ? value : 0)}
-          onValueCommitted={(value) => {
-            seek(typeof value === "number" ? value : 0)
+          onScrub={setScrubbing}
+          onCommit={(value) => {
+            seek(value)
             setScrubbing(null)
           }}
-          aria-label="Seek"
+          onCancel={() => setScrubbing(null)}
         />
         <span className="w-9 text-[11px] tabular-nums text-muted-foreground">{formatTime(duration)}</span>
       </div>

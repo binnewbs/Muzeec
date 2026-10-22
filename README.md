@@ -131,11 +131,13 @@ chmod +x Muzeec-*.AppImage
 
 | Shortcut | Action |
 | --- | --- |
+| `Space` | Play / pause |
+| `←` / `→` | Seek backward / forward 5 seconds |
 | `Ctrl/Cmd + K` | Open the command palette |
 | `Ctrl/Cmd + B` | Toggle the sidebar |
 | Media play/pause, next, previous | Control playback through the system |
 
-Queue items can be reordered with drag and drop or with the arrow keys while focused.
+Shortcuts are ignored while typing in a text field. Left/Right also keep their normal behavior inside menus, lists, and focused sliders. Queue items can be reordered with drag and drop or with the Up/Down arrow keys while focused.
 
 ## How it works
 

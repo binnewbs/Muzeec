@@ -15,6 +15,7 @@ import { useSettings } from "@/lib/store/settings"
 import { useView } from "@/lib/store/view"
 import { initDownloads } from "@/lib/store/downloads"
 import { initPlayer } from "@/player/controller"
+import { usePlaybackShortcuts } from "@/hooks/use-playback-shortcuts"
 
 const HomePage = lazy(() => import("@/pages/home"))
 const ExplorePage = lazy(() => import("@/pages/explore"))
@@ -31,6 +32,8 @@ export default function App() {
   const settings = useSettings((state) => state.settings)
   const loadSettings = useSettings((state) => state.load)
   const initAuth = useAuth((state) => state.init)
+
+  usePlaybackShortcuts()
 
   useEffect(() => {
     void (async () => {
