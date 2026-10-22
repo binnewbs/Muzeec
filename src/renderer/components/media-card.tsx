@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import type { MediaItem } from "@shared/types"
 import { PlayIcon } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -5,9 +6,9 @@ import { useView } from "@/lib/store/view"
 import { playTrack } from "@/player/controller"
 import { toTrack } from "@/lib/media"
 
-type Props = { item: MediaItem; fill?: boolean; onActivate?: () => void }
+type Props = { item: MediaItem; fill?: boolean; onActivate?: () => void; cover?: ReactNode }
 
-export function MediaCard({ item, fill = false, onActivate }: Props) {
+export function MediaCard({ item, fill = false, onActivate, cover }: Props) {
   const navigate = useView((state) => state.navigate)
 
   const activate = () => {
@@ -34,7 +35,9 @@ export function MediaCard({ item, fill = false, onActivate }: Props) {
     >
       <Card className="w-full gap-0 overflow-hidden p-0 transition-colors group-hover:bg-accent">
         <div className="relative aspect-square w-full overflow-hidden bg-muted">
-          {item.thumbnail ? (
+          {cover ? (
+            cover
+          ) : item.thumbnail ? (
             <img
               src={item.thumbnail}
               alt=""

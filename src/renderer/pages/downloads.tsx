@@ -1,26 +1,21 @@
-import { useMemo } from "react"
-import type { DownloadProgress, Track } from "@shared/types"
-import {
-  CaptionsIcon,
-  CompassIcon,
-  DownloadIcon,
-  MoreHorizontalIcon,
-  PlayIcon,
-  Trash2Icon,
-} from "lucide-react"
+import { useMemo, useState } from "react"
+import type { DownloadProgress } from "@shared/types"
+import { ArrowLeftIcon, ArrowUpDownIcon, DownloadIcon, PlayIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { DownloadsArtwork } from "@/components/downloads-artwork"
+import { Progress } from "@/components/ui/progress"
+import { TrackList } from "@/components/track-list"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
-  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { PageEmpty } from "@/components/page-states"
-import { Progress } from "@/components/ui/progress"
-import { downloadLabel, downloadPercent, formatBytes, downloadedToTrack } from "@/lib/downloads"
-import { formatDuration } from "@/lib/media"
+import { downloadLabel, downloadPercent, downloadedToTrack, formatBytes } from "@/lib/downloads"
 import { useDownloads } from "@/lib/store/downloads"
 import { useView } from "@/lib/store/view"
 import { playTracks } from "@/player/controller"
@@ -28,11 +23,25 @@ import { playTracks } from "@/player/controller"
 export default function DownloadsPage() {
   const items = useDownloads((state) => state.items)
   const active = useDownloads((state) => state.active)
-  const loading = useDownloads((state) => state.loading)
-  const remove = useDownloads((state) => state.remove)
+  const back = useView((state) => state.back)
   const navigate = useView((state) => state.navigate)
+  const [sortBy, setSortBy] = useState<"downloaded" | "title">("downloaded")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
   const tracks = useMemo(() => items.map(downloadedToTrack), [items])
+  const sortedTracks = useMemo(() => {
+    const indexed = tracks.map((track, index) => ({ track, index }))
+    indexed.sort((a, b) => {
+      const cmp =
+        sortBy === "title"
+          ? a.track.title.localeCompare(b.track.title, undefined, { sensitivity: "base" })
+          : a.index - b.index
+      return sortDir === "asc" ? cmp : -cmp
+    })
+    return indexed.map((entry) => entry.track)
+  }, [tracks, sortBy, sortDir])
+
+  const totalSize = useMemo(() => items.reduce((sum, item) => sum + item.size, 0), [items])
   const activeItems = useMemo(() => {
     const unique = new Map<string, DownloadProgress>()
     for (const progress of Object.values(active)) {
@@ -41,140 +50,109 @@ export default function DownloadsPage() {
     }
     return [...unique.values()]
   }, [active])
-  const totalSize = useMemo(() => items.reduce((sum, item) => sum + item.size, 0), [items])
 
-  const play = (track: Track) => {
-    const index = tracks.findIndex((entry) => entry.videoId === track.videoId)
-    void playTracks(tracks, Math.max(0, index))
+  const playAll = () => {
+    if (sortedTracks.length) void playTracks(sortedTracks, 0)
   }
 
   return (
     <div className="flex flex-col gap-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="font-heading text-3xl font-semibold tracking-tight">Downloaded Music</h1>
-          <p className="text-sm text-muted-foreground">
-            {items.length
-              ? `${items.length} ${items.length === 1 ? "song" : "songs"} · ${formatBytes(totalSize)}`
-              : "Listen without a connection"}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => navigate({ name: "explore" })}>
-          <CompassIcon data-icon="inline-start" />
-          Find more music
+      <div className="flex flex-col gap-6">
+        <Button variant="ghost" size="sm" className="w-fit" onClick={back}>
+          <ArrowLeftIcon data-icon="inline-start" />
+          Back
         </Button>
-      </header>
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end">
+          <DownloadsArtwork className="size-40 shrink-0 rounded-2xl shadow-lg sm:size-52" />
+          <div className="flex min-w-0 flex-col gap-2">
+            <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Offline</span>
+            <h1 className="font-heading text-3xl font-semibold tracking-tight text-balance">Downloaded Music</h1>
+            <span className="text-sm text-muted-foreground">
+              {items.length
+                ? `${items.length} ${items.length === 1 ? "song" : "songs"} · ${formatBytes(totalSize)}`
+                : "No songs yet"}
+            </span>
+            <div className="flex flex-wrap gap-2">
+              {tracks.length ? (
+                <Button className="w-fit" onClick={playAll}>
+                  <PlayIcon data-icon="inline-start" />
+                  Play all
+                </Button>
+              ) : null}
+              {tracks.length ? (
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger render={<Button variant="ghost" className="w-fit" />}>
+                    <ArrowUpDownIcon data-icon="inline-start" />
+                    Sort
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-56">
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortBy}
+                        onValueChange={(value) => setSortBy(value as "downloaded" | "title")}
+                      >
+                        <DropdownMenuRadioItem value="downloaded">Downloaded</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="title">Title</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>Order</DropdownMenuLabel>
+                      <DropdownMenuRadioGroup
+                        value={sortDir}
+                        onValueChange={(value) => setSortDir(value as "asc" | "desc")}
+                      >
+                        <DropdownMenuRadioItem value="asc">Ascending</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="desc">Descending</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {activeItems.length ? (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-lg font-medium tracking-tight">In progress</h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="flex flex-col gap-2">
+          <h2 className="font-heading text-lg font-medium tracking-tight">Downloading</h2>
+          <div className="flex flex-col gap-1">
             {activeItems.map((progress) => (
-              <Card key={progress.videoId} className="gap-0 p-3">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-medium">{progress.title}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{downloadLabel(progress)}</span>
-                  </div>
+              <div key={progress.videoId} className="flex items-center gap-3 rounded-xl px-2 py-2">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-zinc-900 text-zinc-500">
+                  <DownloadIcon className="size-4" strokeWidth={1.5} />
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <span className="truncate text-sm font-medium">{progress.title}</span>
                   <Progress
                     value={progress.total ? downloadPercent(progress) : null}
                     aria-label={`Downloading ${progress.title}`}
-                    className="[&_[data-slot=progress-track]]:h-1.5"
+                    className="[&_[data-slot=progress-track]]:h-1"
                   />
                 </div>
-              </Card>
+                <span className="shrink-0 text-xs text-muted-foreground">{downloadLabel(progress)}</span>
+              </div>
             ))}
           </div>
         </section>
       ) : null}
 
-      {loading ? null : items.length ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {items.map((item) => {
-            const track = downloadedToTrack(item)
-            return (
-              <Card key={item.videoId} className="group gap-0 overflow-hidden p-0 transition-colors hover:bg-accent">
-                <div className="relative aspect-square w-full overflow-hidden bg-muted">
-                  <button
-                    type="button"
-                    onClick={() => play(track)}
-                    aria-label={`Play ${item.title}`}
-                    className="size-full outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {item.thumbnail ? (
-                      <img
-                        src={item.thumbnail}
-                        alt=""
-                        loading="lazy"
-                        width={320}
-                        height={320}
-                        className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      />
-                    ) : (
-                      <span className="flex size-full items-center justify-center text-muted-foreground">
-                        <DownloadIcon className="size-8" />
-                      </span>
-                    )}
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/35 opacity-0 transition-opacity group-hover:opacity-100">
-                      <span className="flex size-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow">
-                        <PlayIcon className="size-4" />
-                      </span>
-                    </span>
-                  </button>
-                  {item.hasLyrics ? (
-                    <span
-                      className="absolute top-2 left-2 rounded-full bg-black/55 p-1.5 text-white"
-                      title="Lyrics saved for offline listening"
-                    >
-                      <CaptionsIcon className="size-3.5" />
-                    </span>
-                  ) : null}
-                </div>
-                <CardContent className="flex items-center gap-1 p-2.5">
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm font-medium">{item.title}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {item.subtitle}
-                      {item.duration ? ` · ${formatDuration(item.duration)}` : ""}
-                    </span>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Actions for ${item.title}`}
-                          className="opacity-0 group-hover:opacity-100 data-[popup-open]:opacity-100"
-                        />
-                      }
-                    >
-                      <MoreHorizontalIcon />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuGroup>
-                        <DropdownMenuItem onClick={() => play(track)}>
-                          <PlayIcon />
-                          Play
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void remove(item.videoId)}>
-                          <Trash2Icon />
-                          Remove download
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </CardContent>
-              </Card>
-            )
-          })}
-        </div>
+      {tracks.length ? (
+        <TrackList items={sortedTracks} context={sortedTracks} />
       ) : (
-        <PageEmpty
-          title="No downloads yet"
-          description="Use the three-dot menu on any song, or right-click the title in the player, to save it for offline listening."
-          action={<Button onClick={() => navigate({ name: "explore" })}>Explore music</Button>}
-        />
+        <div className="flex flex-col items-center gap-4 rounded-2xl border border-dashed px-6 py-14 text-center">
+          <DownloadIcon className="size-6 text-muted-foreground" strokeWidth={1.5} />
+          <div className="flex flex-col gap-1">
+            <p className="font-heading text-lg font-medium">No downloads yet</p>
+            <p className="text-sm text-muted-foreground">
+              Use the three-dot menu on any song, or right-click the title in the player, to save it for offline
+              listening.
+            </p>
+          </div>
+          <Button onClick={() => navigate({ name: "explore" })}>Explore music</Button>
+        </div>
       )}
     </div>
   )

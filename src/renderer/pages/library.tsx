@@ -1,9 +1,9 @@
 import { useState } from "react"
 import type { MediaItem } from "@shared/types"
 import { CompassIcon, DownloadIcon, PlusIcon } from "lucide-react"
-import downloadsCover from "@/assets/downloads-cover.svg"
 import { BrowseView } from "@/components/browse-view"
 import { CreatePlaylistDialog } from "@/components/create-playlist-dialog"
+import { DownloadsArtwork } from "@/components/downloads-artwork"
 import { MediaCard } from "@/components/media-card"
 import { MediaGrid } from "@/components/media-shelf"
 import { SpotifyImportDialog } from "@/components/spotify-import-dialog"
@@ -29,10 +29,15 @@ export default function LibraryPage() {
     subtitle: downloads.length
       ? `Offline • ${downloads.length} ${downloads.length === 1 ? "song" : "songs"}`
       : "Offline • No songs yet",
-    thumbnail: downloadsCover,
+    thumbnail: null,
   }
   const downloadsCard = (
-    <MediaCard item={downloadsItem} fill onActivate={() => navigate({ name: "downloads" })} />
+    <MediaCard
+      item={downloadsItem}
+      fill
+      cover={<DownloadsArtwork className="size-full" />}
+      onActivate={() => navigate({ name: "downloads" })}
+    />
   )
 
   if (!signedIn) {
