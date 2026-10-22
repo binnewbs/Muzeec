@@ -7,7 +7,7 @@ import { shuffled } from "@/lib/shuffle"
 import { useSettings } from "@/lib/store/settings"
 import { useAuth } from "@/lib/store/auth"
 import { engine, setMediaSession } from "./engine"
-import { nextInCycle } from "./sequence.ts"
+import { HISTORY_LIMIT, initialHistory, nextInCycle } from "./sequence.ts"
 
 let started = false
 let requestToken = 0
@@ -61,7 +61,7 @@ function remember(track: Track): void {
   const current = usePlayer.getState().current
   if (!current || current.videoId === track.videoId) return
   history.push(current)
-  if (history.length > 50) history.shift()
+  if (history.length > HISTORY_LIMIT) history.shift()
 }
 
 export async function playTracks(tracks: Track[], index: number): Promise<void> {
@@ -76,7 +76,16 @@ export async function playTracks(tracks: Track[], index: number): Promise<void> 
   queue.replace(ordered)
   cycle = [musicTrack, ...ordered]
   resetAutoplay()
-  await startTrack(musicTrack)
+  if (queue.shuffle) {
+    // Leave the previous-track stack alone; startTrack records the outgoing
+    // song, so Previous returns to whatever was playing before the collection.
+    await startTrack(musicTrack)
+    return
+  }
+  // Starting a collection replaces previous history with the songs before the
+  // clicked one, so stepping back walks the collection rather than the last one.
+  history = initialHistory(tracks, index)
+  await startTrack(musicTrack, false)
 }
 
 async function ensureMusicTrack(track: Track): Promise<Track> {
@@ -92,6 +101,7 @@ export async function playTrack(track: Track): Promise<void> {
   const current = usePlayer.getState().current
   if (current?.videoId !== musicTrack.videoId) {
     queue.clear()
+    history = []
     unshuffledCycle = null
   }
   const nextQueue = useQueue.getState()
@@ -99,7 +109,9 @@ export async function playTrack(track: Track): Promise<void> {
   if (!unshuffledCycle) unshuffledCycle = [musicTrack, ...nextQueue.tracks]
   resetAutoplay()
   cycle = [musicTrack, ...nextQueue.tracks]
-  await startTrack(musicTrack)
+  // A standalone song starts a fresh session; don't let startTrack push the
+  // outgoing track back onto the history we just cleared.
+  await startTrack(musicTrack, false)
 }
 
 function clampFadeSeconds(): number {

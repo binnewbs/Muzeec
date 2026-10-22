@@ -1,6 +1,17 @@
 import type { Track } from "@shared/types"
 import { shuffled } from "../lib/shuffle.ts"
 
+/** How many previous tracks stay navigable. */
+export const HISTORY_LIMIT = 50
+
+/**
+ * Previous-track stack when starting a collection at `index`, oldest first so
+ * `pop()` yields the song immediately before the clicked one.
+ */
+export function initialHistory(tracks: Track[], index: number): Track[] {
+  return tracks.slice(0, index).slice(-HISTORY_LIMIT)
+}
+
 /** Next pass through an album/playlist/queue when Loop All is active. */
 export function nextInCycle(
   cycle: Track[],
