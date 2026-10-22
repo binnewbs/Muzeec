@@ -13,11 +13,13 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { useAuth } from "@/lib/store/auth"
 import { useSettings } from "@/lib/store/settings"
 import { useView } from "@/lib/store/view"
+import { initDownloads } from "@/lib/store/downloads"
 import { initPlayer } from "@/player/controller"
 
 const HomePage = lazy(() => import("@/pages/home"))
 const ExplorePage = lazy(() => import("@/pages/explore"))
 const LibraryPage = lazy(() => import("@/pages/library"))
+const DownloadsPage = lazy(() => import("@/pages/downloads"))
 const HistoryPage = lazy(() => import("@/pages/history"))
 const SearchPage = lazy(() => import("@/pages/search"))
 const DetailPage = lazy(() => import("@/pages/detail"))
@@ -34,6 +36,7 @@ export default function App() {
     void (async () => {
       await loadSettings()
       initPlayer()
+      initDownloads()
       await initAuth()
     })()
   }, [loadSettings, initAuth])
@@ -81,6 +84,8 @@ export default function App() {
                     <ExplorePage />
                   ) : view.name === "library" ? (
                     <LibraryPage />
+                  ) : view.name === "downloads" ? (
+                    <DownloadsPage />
                   ) : view.name === "history" ? (
                     <HistoryPage />
                   ) : view.name === "search" ? (

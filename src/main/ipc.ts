@@ -1,5 +1,13 @@
 import { app, BrowserWindow, ipcMain, powerSaveBlocker } from "electron"
-import type { AppSettings, BrowseChunk, BrowsePage, PinnedPlaylist, PlayerState, Rating, Track } from "../shared/types.ts"
+import type {
+  AppSettings,
+  BrowseChunk,
+  BrowsePage,
+  PinnedPlaylist,
+  PlayerState,
+  Rating,
+  Track,
+} from "../shared/types.ts"
 import { normalizeSearchHistory } from "../shared/search-history.ts"
 import { authState, getScope, logout } from "./youtube/auth.ts"
 import { openLogin } from "./window.ts"
@@ -11,6 +19,14 @@ import { rate, getRating, addToPlaylist, createPlaylist, deletePlaylist, movePla
 import { flushSettings, getSettings, updateSettings } from "./storage/settings.ts"
 import { cacheClear, cacheGet, cacheSet, cacheTrim } from "./storage/cache.ts"
 import { lyricsProviderInfo, lookupLyrics } from "./lyrics/engine.ts"
+import {
+  cacheLyricsForDownload,
+  downloadedDecision,
+  listDownloads,
+  localLyrics,
+  removeDownload,
+  startDownload,
+} from "./downloads.ts"
 import { updateTray } from "./tray.ts"
 import { importSpotifyPlaylist } from "./spotify/importer.ts"
 
@@ -182,9 +198,71 @@ export function registerIpc(): void {
     return await resolveMusicTrack(id)
   })
 
+  ipcMain.handle("downloads:list", () => listDownloads())
+
+  ipcMain.handle("downloads:start", async (_event, input) => {
+    const { track } = record(input)
+    const value = record(track)
+    const videoId = text(value.videoId, "videoId", 32)
+    const title = text(value.title, "title", 300)
+    const subtitle = typeof value.subtitle === "string" ? value.subtitle.slice(0, 500) : ""
+    const duration = Number(value.duration)
+    const thumbnail =
+      typeof value.thumbnail === "string" && value.thumbnail.startsWith("https://") ? value.thumbnail : null
+    const artists = Array.isArray(value.artists)
+      ? value.artists
+          .filter(
+            (entry): entry is { name: string; id: string | null } =>
+              Boolean(entry) &&
+              typeof entry === "object" &&
+              typeof (entry as Record<string, unknown>).name === "string",
+          )
+          .slice(0, 20)
+          .map((entry) => ({
+            name: entry.name.slice(0, 300),
+            id: typeof entry.id === "string" ? entry.id.slice(0, 64) : null,
+          }))
+      : []
+    const albumValue = value.album
+    const album =
+      albumValue && typeof albumValue === "object"
+        ? {
+            name:
+              typeof (albumValue as Record<string, unknown>).name === "string"
+                ? ((albumValue as Record<string, unknown>).name as string).slice(0, 300)
+                : "",
+            id:
+              typeof (albumValue as Record<string, unknown>).id === "string"
+                ? ((albumValue as Record<string, unknown>).id as string).slice(0, 64)
+                : null,
+          }
+        : null
+    const trackInput: Track = {
+      kind: "track",
+      id: videoId,
+      videoId,
+      title,
+      subtitle,
+      thumbnail,
+      duration: Number.isFinite(duration) ? Math.max(0, duration) : 0,
+      artists,
+      album: album?.name ? album : null,
+      year: typeof value.year === "string" ? value.year.slice(0, 20) : null,
+      musicVideoType: typeof value.musicVideoType === "string" ? value.musicVideoType.slice(0, 80) : null,
+    }
+    return startDownload(trackInput)
+  })
+
+  ipcMain.handle("downloads:remove", async (_event, input) => {
+    const { videoId } = record(input)
+    return removeDownload(text(videoId, "videoId", 32))
+  })
+
   ipcMain.handle("yt:player", async (_event, input) => {
     const { videoId } = record(input)
     const id = text(videoId, "videoId", 32)
+    const local = downloadedDecision(id)
+    if (local) return local
     try {
       return await resolvePlayer(id, (await authState()).signedIn)
     } catch (error) {
@@ -328,7 +406,11 @@ export function registerIpc(): void {
     const duration = Number(payload.durationMs)
     const durationMs = Number.isFinite(duration) ? Math.max(0, duration) : 0
     const isrc = typeof payload.isrc === "string" && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(payload.isrc) ? payload.isrc : null
-    return lookupLyrics(
+    // Downloaded songs carry their own lyrics file, so the panel works offline
+    // and does not depend on the in-memory provider cache.
+    const offline = localLyrics(videoId)
+    if (offline) return offline
+    const result = await lookupLyrics(
       {
         videoId,
         title,
@@ -340,6 +422,8 @@ export function registerIpc(): void {
       },
       getSettings(),
     )
+    if (result) await cacheLyricsForDownload(videoId, result)
+    return result
   })
 
   ipcMain.handle("lyrics:clearCache", () => {

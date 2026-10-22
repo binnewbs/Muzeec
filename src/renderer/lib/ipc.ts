@@ -3,6 +3,8 @@ import type {
   AuthState,
   BrowseChunk,
   BrowsePage,
+  DownloadedTrack,
+  DownloadProgress,
   HistoryEvent,
   LyricsProviderInfo,
   LyricsRequest,
@@ -43,6 +45,9 @@ export type MuzeecApi = {
   spotifyCancel: (input: { jobId: string }) => Promise<Result<boolean>>
   subscribe: (input: { channelId: string; subscribed: boolean; params?: string | null }) => Promise<Result<void>>
   history: (input: HistoryEvent) => Promise<Result<void>>
+  downloadsList: () => Promise<Result<DownloadedTrack[]>>
+  downloadStart: (input: { track: Track }) => Promise<Result<DownloadedTrack>>
+  downloadRemove: (input: { videoId: string }) => Promise<Result<boolean>>
   lyrics: (input: LyricsRequest) => Promise<Result<LyricsResult | null>>
   lyricsProviders: () => Promise<Result<LyricsProviderInfo[]>>
   lyricsClearCache: () => Promise<Result<boolean>>
@@ -56,6 +61,7 @@ export type MuzeecApi = {
   onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
   onSpotifyProgress: (callback: (progress: SpotifyImportProgress) => void) => () => void
+  onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
 }
 
 declare global {

@@ -139,6 +139,43 @@ export type LyricsRequest = {
   retry?: boolean
 }
 
+/**
+ * A song saved under `userData/downloads`. The manifest is self-contained so
+ * the Downloaded Music page can render offline without a network round-trip.
+ */
+export type DownloadedTrack = {
+  videoId: string
+  /** Original id when the download came from an official music video. */
+  sourceVideoId?: string | null
+  title: string
+  subtitle: string
+  thumbnail: string | null
+  duration: number
+  artists?: ArtistRef[]
+  album?: { name: string; id: string | null } | null
+  year?: string | null
+  musicVideoType?: string | null
+  /** File name relative to the downloads directory. */
+  file: string
+  mimeType: string
+  bitrate: number
+  size: number
+  downloadedAt: number
+  hasLyrics: boolean
+}
+
+export type DownloadStatus = "resolving" | "downloading" | "lyrics" | "completed" | "error"
+
+export type DownloadProgress = {
+  videoId: string
+  sourceVideoId?: string | null
+  title: string
+  status: DownloadStatus
+  received: number
+  total: number
+  error?: string
+}
+
 /** Playlist pinned to the sidebar; metadata is cached so the sidebar needs no network at startup. */
 export type PinnedPlaylist = {
   id: string

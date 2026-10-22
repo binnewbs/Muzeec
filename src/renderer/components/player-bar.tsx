@@ -3,6 +3,7 @@ import type { Track } from "@shared/types"
 import { toast } from "sonner"
 import {
   CaptionsIcon,
+  DownloadIcon,
   GripVerticalIcon,
   HeartIcon,
   ListMusicIcon,
@@ -14,6 +15,7 @@ import {
   ShuffleIcon,
   SkipBackIcon,
   SkipForwardIcon,
+  Trash2Icon,
   Volume1Icon,
   Volume2Icon,
   VolumeXIcon,
@@ -36,6 +38,8 @@ import { ArtistLinks } from "@/components/artist-links"
 import { AddToPlaylistDialog } from "@/components/add-to-playlist"
 import { LyricsPanel } from "@/components/lyrics-panel"
 import { useAuth } from "@/lib/store/auth"
+import { useDownloads } from "@/lib/store/downloads"
+import { downloadFor, downloadLabel } from "@/lib/downloads"
 import { usePlayer } from "@/lib/store/player"
 import { useQueue } from "@/lib/store/queue"
 import { useSettings } from "@/lib/store/settings"
@@ -66,6 +70,11 @@ export function PlayerBar() {
   const update = useSettings((state) => state.update)
   const lyricsEnabled = useSettings((state) => state.settings.lyricsEnabled)
   const signedIn = useAuth((state) => state.state.signedIn)
+  const downloads = useDownloads((state) => state.items)
+  const activeDownloads = useDownloads((state) => state.active)
+  const downloaded = current ? downloadFor(downloads, current.videoId) : null
+  const downloadProgress = current ? activeDownloads[current.videoId] : undefined
+  const downloading = Boolean(downloadProgress && downloadProgress.status !== "error")
   const [scrubbing, setScrubbing] = useState<number | null>(null)
   const [addTo, setAddTo] = useState<Track | null>(null)
   const display = scrubbing ?? position
@@ -109,6 +118,21 @@ export function PlayerBar() {
                 >
                   <ListPlusIcon />
                   Add to playlist
+                </ContextMenuItem>
+                <ContextMenuItem
+                  disabled={!current || downloading}
+                  onClick={() => {
+                    if (!current) return
+                    if (downloaded) void useDownloads.getState().remove(downloaded.videoId)
+                    else void useDownloads.getState().start(current)
+                  }}
+                >
+                  {downloaded ? <Trash2Icon /> : <DownloadIcon />}
+                  {downloaded
+                    ? "Remove download"
+                    : downloadProgress
+                      ? downloadLabel(downloadProgress)
+                      : "Download"}
                 </ContextMenuItem>
               </ContextMenuGroup>
             </ContextMenuContent>

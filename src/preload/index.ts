@@ -4,6 +4,8 @@ import type {
   AuthState,
   BrowseChunk,
   BrowsePage,
+  DownloadedTrack,
+  DownloadProgress,
   HistoryEvent,
   LyricsProviderInfo,
   LyricsRequest,
@@ -52,6 +54,9 @@ export type MuzeecApi = {
   spotifyCancel: (input: { jobId: string }) => Promise<Result<boolean>>
   subscribe: (input: { channelId: string; subscribed: boolean; params?: string | null }) => Promise<Result<void>>
   history: (input: HistoryEvent) => Promise<Result<void>>
+  downloadsList: () => Promise<Result<DownloadedTrack[]>>
+  downloadStart: (input: { track: Track }) => Promise<Result<DownloadedTrack>>
+  downloadRemove: (input: { videoId: string }) => Promise<Result<boolean>>
   lyrics: (input: LyricsRequest) => Promise<Result<LyricsResult | null>>
   lyricsProviders: () => Promise<Result<LyricsProviderInfo[]>>
   lyricsClearCache: () => Promise<Result<boolean>>
@@ -65,6 +70,7 @@ export type MuzeecApi = {
   onWindowMaximized: (callback: (maximized: boolean) => void) => () => void
   onMediaKey: (callback: (action: "playpause" | "next" | "previous") => void) => () => void
   onSpotifyProgress: (callback: (progress: SpotifyImportProgress) => void) => () => void
+  onDownloadProgress: (callback: (progress: DownloadProgress) => void) => () => void
 }
 
 const api: MuzeecApi = {
@@ -88,6 +94,9 @@ const api: MuzeecApi = {
   spotifyCancel: (input) => call("spotify:cancel", input),
   subscribe: (input) => call("yt:subscribe", input),
   history: (input) => call("yt:history", input),
+  downloadsList: () => call("downloads:list"),
+  downloadStart: (input) => call("downloads:start", input),
+  downloadRemove: (input) => call("downloads:remove", input),
   lyrics: (input) => call("lyrics:get", input),
   lyricsProviders: () => call("lyrics:providers"),
   lyricsClearCache: () => call("lyrics:clearCache"),
@@ -112,6 +121,11 @@ const api: MuzeecApi = {
     const listener = (_event: unknown, progress: SpotifyImportProgress) => callback(progress)
     ipcRenderer.on("spotify:progress", listener)
     return () => ipcRenderer.removeListener("spotify:progress", listener)
+  },
+  onDownloadProgress: (callback) => {
+    const listener = (_event: unknown, progress: DownloadProgress) => callback(progress)
+    ipcRenderer.on("downloads:progress", listener)
+    return () => ipcRenderer.removeListener("downloads:progress", listener)
   },
 }
 

@@ -1,6 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import type { MediaItem, Track } from "@shared/types"
-import { MoreHorizontalIcon, ListPlusIcon, MusicIcon, PauseIcon, PlayIcon } from "lucide-react"
+import {
+  DownloadIcon,
+  MoreHorizontalIcon,
+  ListPlusIcon,
+  MusicIcon,
+  PauseIcon,
+  PlayIcon,
+  Trash2Icon,
+} from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { AddToPlaylistDialog } from "@/components/add-to-playlist"
@@ -17,6 +25,8 @@ import {
 import { formatDuration, toTrack } from "@/lib/media"
 import { cn } from "@/lib/utils"
 import { usePlayer } from "@/lib/store/player"
+import { useDownloads } from "@/lib/store/downloads"
+import { downloadFor, downloadLabel } from "@/lib/downloads"
 import { playTracks, playTrack, playTrackNext, addToQueue, likeTrack, toggleLike, togglePlay } from "@/player/controller"
 
 type Props = {
@@ -226,6 +236,11 @@ const TrackRow = memo(function TrackRow({
   onDragEnd: () => void
 }) {
   const track = toTrack(item)
+  const downloads = useDownloads((state) => state.items)
+  const activeDownloads = useDownloads((state) => state.active)
+  const downloaded = downloadFor(downloads, track.videoId)
+  const progress = activeDownloads[track.videoId]
+  const downloading = Boolean(progress && progress.status !== "error")
   const artistNames = (track.artists ?? []).map((artist) => artist.name.trim().toLowerCase()).filter(Boolean)
   const rest = track.artists?.length
     ? track.subtitle
@@ -320,6 +335,16 @@ const TrackRow = memo(function TrackRow({
             <DropdownMenuItem onClick={() => addToQueue(track)}>
               <ListPlusIcon data-icon="inline-start" />
               Add to queue
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={downloading}
+              onClick={() => {
+                if (downloaded) void useDownloads.getState().remove(downloaded.videoId)
+                else void useDownloads.getState().start(track)
+              }}
+            >
+              {downloaded ? <Trash2Icon /> : <DownloadIcon />}
+              {downloaded ? "Remove download" : progress ? downloadLabel(progress) : "Download"}
             </DropdownMenuItem>
             {artistId ? (
               <DropdownMenuItem

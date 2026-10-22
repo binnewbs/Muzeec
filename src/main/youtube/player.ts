@@ -111,10 +111,32 @@ export function clearPlayerCaches(): void {
 }
 
 export async function resolvePlayer(videoId: string, signedIn: boolean): Promise<PlayerDecision> {
+  return resolveStream(videoId, signedIn, "playback")
+}
+
+/**
+ * Downloads bypass the playback itag preference and pick the audio-only stream
+ * with the highest bitrate. `fresh` discards the cached decision, which matters
+ * when a mid-download URL expires and the transfer needs one retry.
+ */
+export async function resolveDownload(videoId: string, signedIn: boolean, fresh = false): Promise<PlayerDecision> {
+  const key = decisionKey(videoId, signedIn, "download")
+  if (fresh) {
+    decisions.delete(key)
+    inflight.delete(key)
+  }
+  return resolveStream(videoId, signedIn, "download")
+}
+
+async function resolveStream(
+  videoId: string,
+  signedIn: boolean,
+  purpose: "playback" | "download",
+): Promise<PlayerDecision> {
   const cachedVerdict = verdicts.get(videoId)
   if (cachedVerdict && cachedVerdict.expires > Date.now()) throw new PlayerFailure(cachedVerdict.reason, true)
 
-  const key = decisionKey(videoId, signedIn)
+  const key = decisionKey(videoId, signedIn, purpose)
   const resolved = decisions.get(key)
   if (resolved && resolved.expires > Date.now() && resolved.decision.expiresAt > Date.now() + 60_000) {
     return resolved.decision
@@ -123,7 +145,7 @@ export async function resolvePlayer(videoId: string, signedIn: boolean): Promise
   const existing = inflight.get(key)
   if (existing) return existing
 
-  const promise = resolveWalk(videoId, signedIn)
+  const promise = resolveWalk(videoId, signedIn, purpose)
     .then((decision) => {
       rememberDecision(key, decision)
       return decision
@@ -133,8 +155,8 @@ export async function resolvePlayer(videoId: string, signedIn: boolean): Promise
   return promise
 }
 
-function decisionKey(videoId: string, signedIn: boolean): string {
-  return `${videoId}:${signedIn ? 1 : 0}:${getSettings().quality}`
+function decisionKey(videoId: string, signedIn: boolean, purpose: "playback" | "download"): string {
+  return `${videoId}:${signedIn ? 1 : 0}:${purpose}:${getSettings().quality}`
 }
 
 function rememberDecision(key: string, decision: PlayerDecision): void {
@@ -180,7 +202,11 @@ type Candidate = {
   loudnessLufs: number | null
 }
 
-async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDecision> {
+async function resolveWalk(
+  videoId: string,
+  signedIn: boolean,
+  purpose: "playback" | "download",
+): Promise<PlayerDecision> {
   const info = await getClientInfo()
   const visitorData = getScope()?.visitorData ?? info.visitorData
   // Signed web clients carry the account's PoToken and return the full stream;
@@ -197,7 +223,7 @@ async function resolveWalk(videoId: string, signedIn: boolean): Promise<PlayerDe
     if (excludedUntil && excludedUntil > Date.now()) continue
 
     for (let attempt = 0; attempt < 2; attempt++) {
-      const result = await attemptClient(client, videoId, signedIn, info.signatureTimestamp, visitorData)
+      const result = await attemptClient(client, videoId, signedIn, info.signatureTimestamp, visitorData, purpose)
       if (result.kind === "decision") return result.decision
       if (result.kind === "permanent") throw result.failure
       reasons.push(result.reason)
@@ -227,6 +253,7 @@ async function attemptClient(
   signedIn: boolean,
   signatureTimestamp: number,
   visitorData: string,
+  purpose: "playback" | "download",
 ): Promise<ClientAttempt> {
   const key = `${videoId}:${client.name}`
   try {
@@ -262,7 +289,7 @@ async function attemptClient(
     const preferredItag = getSettings().quality === "normal" ? 140 : 251
     const audio = formats
       .filter((f) => String(f.mimeType ?? "").startsWith("audio/"))
-      .sort((a, b) => score(b, preferredItag) - score(a, preferredItag))
+      .sort((a, b) => score(b, preferredItag, purpose) - score(a, preferredItag, purpose))
     if (!audio.length) {
       excludeClient(key)
       return {
@@ -348,10 +375,11 @@ async function attemptClient(
   }
 }
 
-function score(format: any, preferredItag: number): number {
-  const itag = Number(format.itag)
-  const preferred = itag === preferredItag ? 300_000 : 0
-  return preferred + Number(format.bitrate ?? 0)
+function score(format: any, preferredItag: number, purpose: "playback" | "download"): number {
+  const bitrate = Number(format.bitrate ?? 0)
+  if (purpose === "download") return bitrate
+  const preferred = Number(format.itag) === preferredItag ? 300_000 : 0
+  return preferred + bitrate
 }
 
 async function toCandidate(
