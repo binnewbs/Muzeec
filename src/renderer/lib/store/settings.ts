@@ -18,6 +18,7 @@ const DEFAULTS: AppSettings = {
   lyricsPreferSyllableTiming: false,
   lyricsOffsetMs: 0,
   lyricsRomanize: false,
+  discordPresence: false,
   lastTrack: null,
   lastPosition: 0,
   searchHistory: [],

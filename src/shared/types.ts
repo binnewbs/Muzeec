@@ -198,6 +198,7 @@ export type AppSettings = {
   lyricsPreferSyllableTiming: boolean
   lyricsOffsetMs: number
   lyricsRomanize: boolean
+  discordPresence: boolean
   lastTrack: Track | null
   lastPosition: number
   searchHistory: string[]
@@ -268,4 +269,10 @@ export type PlayerState = {
   videoId: string | null
   title: string
   artist: string
+  album?: string | null
+  thumbnail?: string | null
+  /** Track length in seconds. */
+  duration?: number
+  /** Current playhead in seconds. */
+  position?: number
 }

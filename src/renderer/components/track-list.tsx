@@ -40,6 +40,8 @@ type Props = {
   /** Enable drag-to-reorder on the rows (playlist pages). */
   reorderable?: boolean
   onReorder?: (from: number, to: number) => void
+  /** Show a remove action for entries that belong to this playlist. */
+  onRemove?: (track: Track) => void
 }
 
 /** Rows rendered before the first scroll extends the window. */
@@ -55,6 +57,7 @@ export function TrackList({
   onLoadMore,
   reorderable = false,
   onReorder,
+  onRemove,
 }: Props) {
   const currentId = usePlayer((state) => state.current?.videoId)
   const playing = usePlayer((state) => state.status === "playing")
@@ -169,6 +172,7 @@ export function TrackList({
             over={overIndex === index && draggingIndex !== index}
             onPlay={play}
             onAddTo={openAddTo}
+            onRemove={onRemove}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
@@ -215,6 +219,7 @@ const TrackRow = memo(function TrackRow({
   over,
   onPlay,
   onAddTo,
+  onRemove,
   onDragStart,
   onDragOver,
   onDrop,
@@ -230,6 +235,7 @@ const TrackRow = memo(function TrackRow({
   over: boolean
   onPlay: (track: Track) => void
   onAddTo: (track: Track) => void
+  onRemove?: (track: Track) => void
   onDragStart: (event: DragEvent<HTMLDivElement>, index: number) => void
   onDragOver: (event: DragEvent<HTMLDivElement>, index: number) => void
   onDrop: (event: DragEvent<HTMLDivElement>, index: number) => void
@@ -328,7 +334,7 @@ const TrackRow = memo(function TrackRow({
         >
           <MoreHorizontalIcon />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
+        <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuGroup>
             <DropdownMenuItem onClick={() => onPlay(track)}>Play</DropdownMenuItem>
             <DropdownMenuItem onClick={() => playTrackNext(track)}>Play next</DropdownMenuItem>
@@ -361,6 +367,14 @@ const TrackRow = memo(function TrackRow({
               Add to playlist
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => void (active ? toggleLike() : likeTrack(track))}>Like</DropdownMenuItem>
+            {onRemove ? (
+              <DropdownMenuItem
+                onClick={() => (signedIn ? onRemove(track) : toast.error("Sign in to edit your library"))}
+              >
+                <Trash2Icon />
+                Remove from playlist
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>

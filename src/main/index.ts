@@ -6,8 +6,9 @@ import { registerIpc } from "./ipc.ts"
 import { createMainWindow } from "./window.ts"
 import { createTray, destroyTray } from "./tray.ts"
 import { flushHistory } from "./youtube/history.ts"
-import { flushSettings } from "./storage/settings.ts"
+import { flushSettings, getSettings } from "./storage/settings.ts"
 import { destroyBotGuard, warmBotGuard } from "./youtube/botguard.ts"
+import { configurePresence, destroyPresence } from "./presence/index.ts"
 
 app.commandLine.appendSwitch("disable-features", "Translate,MediaRouter,OptimizationHints")
 app.commandLine.appendSwitch("disable-component-update")
@@ -37,6 +38,7 @@ if (!app.requestSingleInstanceLock()) {
     installSessionRewriters()
     registerProtocolCsp(ytSession(), !app.isPackaged)
     registerIpc()
+    configurePresence(getSettings().discordPresence)
     mainWindow = createMainWindow()
     mainWindow.on("close", (event) => {
       // Keep playing in the tray; Quit from the tray menu sets the flag above.
@@ -61,6 +63,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("before-quit", () => {
     destroyBotGuard()
+    destroyPresence()
     flushHistory()
     flushSettings()
     destroyTray()

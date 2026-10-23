@@ -19,10 +19,17 @@ export default function SettingsPage() {
   const { state, loading, login, logout } = useAuth()
   const { settings, update } = useSettings()
   const [providers, setProviders] = useState<LyricsProviderInfo[]>([])
+  const [presenceReady, setPresenceReady] = useState<boolean | null>(null)
   const user = state.user
 
   useEffect(() => {
     void unwrap(api.lyricsProviders()).then(setProviders).catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    void unwrap(api.presenceAvailable())
+      .then(setPresenceReady)
+      .catch(() => setPresenceReady(false))
   }, [])
 
   const orderedProviders = [...providers].sort((a, b) => {
@@ -64,6 +71,7 @@ export default function SettingsPage() {
         <TabsList>
           <TabsTrigger value="account">Account</TabsTrigger>
           <TabsTrigger value="playback">Playback</TabsTrigger>
+          <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="lyrics">Lyrics</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
         </TabsList>
@@ -222,6 +230,38 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="integrations" className="pt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Discord Rich Presence</CardTitle>
+              <CardDescription>Show what you are listening to on your Discord profile.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldTitle>Share listening activity</FieldTitle>
+                    <FieldDescription>
+                      Sends the current track, artist, album and playback progress to the Discord desktop
+                      app. No account is linked; Discord then shows the card on your profile.
+                    </FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    checked={settings.discordPresence}
+                    disabled={presenceReady !== true}
+                    onCheckedChange={(checked) => void update({ discordPresence: checked })}
+                  />
+                </Field>
+              </FieldGroup>
+              <p className="mt-4 text-xs text-muted-foreground">
+                {presenceReady === false
+                  ? "This build has no Discord application ID configured, so Rich Presence is unavailable."
+                  : "Requires Discord for desktop to be running with activity sharing enabled."}
+              </p>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="lyrics" className="pt-4">

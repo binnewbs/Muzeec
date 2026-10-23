@@ -1,4 +1,4 @@
-import type { Track } from "@shared/types"
+import type { PlayerState, Track } from "@shared/types"
 import { toast } from "sonner"
 import { api, errorMessage, unwrap } from "@/lib/ipc"
 import { usePlayer } from "@/lib/store/player"
@@ -35,6 +35,33 @@ function finishHistory(position: number, duration: number): void {
   if (!historyVideoId) return
   void api.history({ videoId: historyVideoId, event: "end", position, duration })
   historyVideoId = null
+}
+
+let lastReportedState = ""
+
+function playerStatePayload(): PlayerState {
+  const { current, status, duration } = usePlayer.getState()
+  return {
+    playing: status === "playing",
+    videoId: current?.videoId ?? null,
+    title: current?.title ?? "",
+    artist: current?.subtitle ?? "",
+    album: current?.album?.name ?? null,
+    thumbnail: current?.thumbnail ?? null,
+    duration: duration || engine.duration || current?.duration || 0,
+    position: pendingRestore ? pendingRestore.position : engine.currentTime,
+  }
+}
+
+/** Sends the tray/presence snapshot. Loading a stream should not clear the card. */
+function reportPlayerState(): void {
+  const { status } = usePlayer.getState()
+  if (status === "loading") return
+  const payload = playerStatePayload()
+  const serialized = JSON.stringify(payload)
+  if (serialized === lastReportedState) return
+  lastReportedState = serialized
+  void api.setPlayerState(payload)
 }
 
 function resetAutoplay(): void {
@@ -403,10 +430,12 @@ export function seek(seconds: number): void {
     pendingRestore.position = seconds
     engine.setPosition(seconds)
     void api.setSettings({ lastPosition: seconds })
+    reportPlayerState()
     return
   }
   engine.seek(seconds)
   void api.setSettings({ lastPosition: seconds })
+  reportPlayerState()
 }
 
 /** Moves the playhead by `delta` seconds, clamped to the current track. */
@@ -637,18 +666,7 @@ export function initPlayer(): void {
     })
   }
 
-  let last = { playing: false, videoId: null as string | null, title: "", artist: "" }
-  usePlayer.subscribe((state) => {
-    const payload = {
-      playing: state.status === "playing",
-      videoId: state.current?.videoId ?? null,
-      title: state.current?.title ?? "",
-      artist: state.current?.subtitle ?? "",
-    }
-    if (JSON.stringify(payload) === JSON.stringify(last)) return
-    last = payload
-    void api.setPlayerState(payload)
-  })
+  usePlayer.subscribe(() => reportPlayerState())
 
   api.onMediaKey((action) => {
     if (action === "playpause") togglePlay()
@@ -657,6 +675,7 @@ export function initPlayer(): void {
   })
 
   restoreLastPlayback()
+  reportPlayerState()
 }
 
 /**

@@ -52,6 +52,23 @@ export async function addToPlaylistBatch(playlist: string, videoIds: string[]): 
   if (response?.error) throw new Error(response.error.message ?? "Could not add to playlist")
 }
 
+/**
+ * Removes one playlist entry. `setVideoId` identifies the entry itself, so a
+ * duplicate song elsewhere in the playlist is left alone.
+ */
+export async function removeFromPlaylist(
+  playlist: string,
+  videoId: string,
+  setVideoId: string,
+): Promise<void> {
+  requireScope()
+  const response: any = await innertube("browse/edit_playlist", {
+    playlistId: playlistId(playlist),
+    actions: [{ action: "ACTION_REMOVE_VIDEO", removedVideoId: videoId, setVideoId }],
+  })
+  if (response?.error) throw new Error(response.error.message ?? "Could not remove from playlist")
+}
+
 export async function deletePlaylist(playlist: string): Promise<void> {
   requireScope()
   const response: any = await innertube("playlist/delete", { playlistId: playlistId(playlist) })

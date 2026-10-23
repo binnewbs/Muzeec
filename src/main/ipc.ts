@@ -15,7 +15,7 @@ import { innertube } from "./youtube/innertube.ts"
 import { parseBrowseFeed, parseBrowsePage, parseQueueTracks } from "./youtube/parser.ts"
 import { clearPlayerCaches, resolvePlayer, resolveMusicTrack, PlayerFailure } from "./youtube/player.ts"
 import { trackHistory, flushHistory } from "./youtube/history.ts"
-import { rate, getRating, addToPlaylist, createPlaylist, deletePlaylist, movePlaylistItem, renamePlaylist, subscribe } from "./youtube/sync.ts"
+import { rate, getRating, addToPlaylist, createPlaylist, deletePlaylist, movePlaylistItem, removeFromPlaylist, renamePlaylist, subscribe } from "./youtube/sync.ts"
 import { flushSettings, getSettings, updateSettings } from "./storage/settings.ts"
 import { cacheClear, cacheGet, cacheSet, cacheTrim } from "./storage/cache.ts"
 import { lyricsProviderInfo, lookupLyrics } from "./lyrics/engine.ts"
@@ -28,6 +28,7 @@ import {
   startDownload,
 } from "./downloads.ts"
 import { updateTray } from "./tray.ts"
+import { configurePresence, presenceAvailable, updatePresence } from "./presence/index.ts"
 import { importSpotifyPlaylist } from "./spotify/importer.ts"
 
 function text(value: unknown, name: string, max = 2048): string {
@@ -38,6 +39,35 @@ function text(value: unknown, name: string, max = 2048): string {
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid payload")
   return value as Record<string, unknown>
+}
+
+/** Sanitises the renderer's player snapshot before it reaches the tray or Discord. */
+function readPlayerState(value: unknown): PlayerState {
+  const input = record(value)
+  const string = (field: unknown, max: number) =>
+    typeof field === "string" ? field.slice(0, max) : ""
+  const seconds = (field: unknown) => {
+    const parsed = Number(field)
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+  }
+  const thumbnail =
+    typeof input.thumbnail === "string" && input.thumbnail.startsWith("https://")
+      ? input.thumbnail.slice(0, 2048)
+      : null
+
+  return {
+    playing: input.playing === true,
+    videoId:
+      typeof input.videoId === "string" && input.videoId.length > 0 && input.videoId.length <= 32
+        ? input.videoId
+        : null,
+    title: string(input.title, 300),
+    artist: string(input.artist, 300),
+    album: string(input.album, 300) || null,
+    thumbnail,
+    duration: seconds(input.duration),
+    position: seconds(input.position),
+  }
 }
 
 /** Album and playlist browse IDs return track lists in ~100-item chunks. */
@@ -306,6 +336,16 @@ export function registerIpc(): void {
     cacheClear("browse:")
   })
 
+  ipcMain.handle("yt:playlistRemove", async (_event, input) => {
+    const { playlistId, videoId, setVideoId } = record(input)
+    await removeFromPlaylist(
+      text(playlistId, "playlistId", 200),
+      text(videoId, "videoId", 32),
+      text(setVideoId, "setVideoId", 200),
+    )
+    cacheClear("browse:")
+  })
+
   ipcMain.handle("yt:playlistDelete", async (_event, input) => {
     const { playlistId } = record(input)
     await deletePlaylist(text(playlistId, "playlistId", 200))
@@ -471,6 +511,7 @@ export function registerIpc(): void {
       lyricsChanged = true
     }
     if (typeof input.lyricsRomanize === "boolean") next.lyricsRomanize = input.lyricsRomanize
+    if (typeof input.discordPresence === "boolean") next.discordPresence = input.discordPresence
     if (typeof input.lastPosition === "number" && Number.isFinite(input.lastPosition)) {
       next.lastPosition = Math.max(0, input.lastPosition)
     }
@@ -509,13 +550,18 @@ export function registerIpc(): void {
     }
     if (lyricsChanged) cacheClear("lyrics")
     if (next.lowMemory) cacheTrim()
-    return updateSettings(next)
+    const saved = updateSettings(next)
+    if (next.discordPresence !== undefined) configurePresence(saved.discordPresence)
+    return saved
   })
+
+  ipcMain.handle("sys:presenceAvailable", () => presenceAvailable())
 
   let blockerId: number | null = null
   ipcMain.handle("sys:playerState", (_event, input) => {
-    const state = record(input) as unknown as PlayerState
+    const state = readPlayerState(input)
     updateTray(state)
+    updatePresence(state)
     if (state.playing && blockerId === null) {
       blockerId = powerSaveBlocker.start("prevent-app-suspension")
     } else if (!state.playing && blockerId !== null) {

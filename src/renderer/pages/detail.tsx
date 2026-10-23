@@ -71,6 +71,7 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
   const [titleDraft, setTitleDraft] = useState("")
   const [renaming, setRenaming] = useState(false)
   const [moving, setMoving] = useState(false)
+  const removingRef = useRef(false)
   const cancelTitleRef = useRef(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingAll, setLoadingAll] = useState(false)
@@ -233,6 +234,63 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
       })()
     },
     [canReorder, data, id, moving, setData, targetShelfIndex],
+  )
+
+  /** Removes one entry from the playlist, with an optimistic row update. */
+  const removeTrack = useCallback(
+    (track: Track): void => {
+      if (!data || removingRef.current) return
+      const setVideoId = track.setVideoId
+      if (!setVideoId) {
+        toast.error("This song can't be removed from the playlist")
+        return
+      }
+      const shelfIndex = targetShelfIndex
+      if (shelfIndex < 0 || shelfIndex >= data.shelves.length) return
+      const previous = data
+
+      setData((current) =>
+        current
+          ? {
+              ...current,
+              shelves: current.shelves.map((shelf, index) =>
+                index === shelfIndex
+                  ? {
+                      ...shelf,
+                      items: shelf.items.filter(
+                        (item) => !(item.kind === "track" && item.setVideoId === setVideoId),
+                      ),
+                    }
+                  : shelf,
+              ),
+            }
+          : current,
+      )
+
+      removingRef.current = true
+      void (async () => {
+        try {
+          await unwrap(api.playlistRemove({ playlistId: id, videoId: track.videoId, setVideoId }))
+          invalidateLibrary()
+          toast.success(`Removed “${track.title}” from the playlist`)
+        } catch (removeError) {
+          setData((current) =>
+            current
+              ? {
+                  ...current,
+                  shelves: current.shelves.map((shelf, index) =>
+                    index === shelfIndex ? (previous.shelves[shelfIndex] ?? shelf) : shelf,
+                  ),
+                }
+              : current,
+          )
+          toast.error(errorMessage(removeError))
+        } finally {
+          removingRef.current = false
+        }
+      })()
+    },
+    [data, id, setData, targetShelfIndex],
   )
 
   if (loading && !data) return <PageLoading />
@@ -512,6 +570,7 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
               onLoadMore={isMain ? loadMore : undefined}
               reorderable={isMain && canReorder}
               onReorder={isMain && canReorder ? moveTrack : undefined}
+              onRemove={isMain && isPlaylist ? removeTrack : undefined}
             />
           </section>
         )
@@ -526,6 +585,7 @@ export default function DetailPage({ id, kind, title }: { id: string; kind: "alb
           hasMore={hasContinuation}
           loadingMore={loadingMore}
           onLoadMore={loadMore}
+          onRemove={isPlaylist && targetShelfIndex >= 0 ? removeTrack : undefined}
         />
       ) : null}
       {isPlaylist ? (

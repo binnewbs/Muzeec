@@ -4,6 +4,7 @@ import type { PlayerState } from "../shared/types.ts"
 
 let tray: Tray | null = null
 let state: PlayerState = { playing: false, videoId: null, title: "Muzeec", artist: "" }
+let lastKey = ""
 
 function icon() {
   const file = path.join(import.meta.dirname, "../../resources/tray.png")
@@ -11,11 +12,20 @@ function icon() {
   return image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 16, height: 16 })
 }
 
-export function updateTray(next: PlayerState): void {
-  state = next
+function apply(): void {
   if (!tray) return
   tray.setToolTip(state.title ? `${state.title} — ${state.artist}` : "Muzeec")
   tray.setContextMenu(buildMenu())
+}
+
+export function updateTray(next: PlayerState): void {
+  state = next
+  // Presence reports include the playhead; do not rebuild the tray menu for
+  // state that the tray cannot show.
+  const key = `${state.playing}|${state.videoId ?? ""}|${state.title}|${state.artist}`
+  if (key === lastKey) return
+  lastKey = key
+  apply()
 }
 
 function buildMenu(): Menu {
@@ -48,9 +58,8 @@ function send(action: "playpause" | "next" | "previous"): void {
 export function createTray(windowGetter: () => BrowserWindow | null): void {
   getWindow = windowGetter
   tray = new Tray(icon())
-  tray.setToolTip("Muzeec")
-  tray.setContextMenu(buildMenu())
   tray.on("click", show)
+  apply()
 
   const shortcuts: Array<[string, "playpause" | "next" | "previous"]> = [
     ["MediaPlayPause", "playpause"],

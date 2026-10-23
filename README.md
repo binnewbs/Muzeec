@@ -31,13 +31,14 @@ It is a personal project: small, keyboard-friendly, and designed to stay out of 
 - Seek, volume, mute, and like controls in the player bar.
 - Normal and high audio quality settings.
 - OS media controls, media keys, and a system tray with playback actions.
+- Optional Discord Rich Presence with the current track, artist, album art, and progress.
 
 ### Library and account
 
 - Optional Google sign-in through Google's own window.
 - Liked songs, playlists, and library content loaded live from your account.
 - Like / unlike songs.
-- Create, add to, and delete playlists.
+- Create, rename, reorder, and delete playlists; add or remove songs individually.
 - Import a public Spotify playlist by URL; songs are matched to YouTube Music and created as a private playlist, with unmatched songs listed.
 - Playlist sorting by date added (source order) or title, ascending or descending.
 - Subscribe and unsubscribe from artists.
@@ -90,6 +91,17 @@ npm run dev
 The app starts without signing in. Browsing and playback work anonymously; signing in unlocks your library, likes, playlists, and subscriptions.
 
 To sign in, use **Sign in** in the sidebar or the Settings page. Authentication happens in an isolated Google window, and cookies stay inside the main process.
+
+### Discord Rich Presence
+
+Rich Presence is off by default and uses Discord's local IPC socket, so no Discord account, token, or OAuth is involved. To enable it in a build:
+
+1. Create an application at [discord.com/developers/applications](https://discord.com/developers/applications).
+2. Under **Rich Presence → Art Assets**, upload `muzeec`, `playing`, and `paused` (optional; dynamic album art comes from YouTube).
+3. Put the Application ID in `src/main/presence/config.ts`, or set `MUZEEC_DISCORD_CLIENT_ID` when running in development. Set `PROJECT_URL` in the same file to add an optional "Get Muzeec" button.
+4. Turn on **Settings → Integrations → Discord Rich Presence**.
+
+Discord for desktop must be running, and activity sharing must be enabled in Discord. Updates follow Discord's one-per-15-seconds limit; the progress bar is drawn from timestamps rather than frequent updates.
 
 ## Scripts
 
@@ -169,6 +181,7 @@ src/
     youtube/       session, InnerTube, parser, stream resolution, sync, history
     lyrics/        providers, matching, parsing, lookup engine
     storage/       local settings and in-memory cache
+    presence/      Discord Rich Presence IPC client
     ipc.ts         typed IPC handlers
     protocol.ts    app:// protocol and CSP
     tray.ts        system tray and media keys
@@ -192,12 +205,14 @@ test/              unit tests and smoke scripts
 - Local preferences are stored in `settings.json`; sign-in metadata is stored in `auth.json` under Electron's `userData` directory.
 - Lyrics are fetched directly from third-party providers on your device. Provider order can be changed in Settings.
 - Playback history is only sent to YouTube when **Send playback history** is enabled.
+- Discord Rich Presence is opt-in. When enabled, the current track, artist, album, artwork URL, and a YouTube Music link are sent only to the local Discord desktop client.
 - Signing out clears the app's YouTube session storage and cached account state.
 
 ## Documentation
 
 - [`docs/ELECTRON_YOUTUBE_MUSIC.md`](docs/ELECTRON_YOUTUBE_MUSIC.md) — architecture notes for authentication, InnerTube, stream resolution, and playback.
 - [`docs/LYRICS_FETCHING_ENGINE.md`](docs/LYRICS_FETCHING_ENGINE.md) — multi-provider lyrics engine design.
+- [`docs/DISCORD_PRESENCE.md`](docs/DISCORD_PRESENCE.md) — Discord IPC, rate limiting, and the presence card.
 - [`PLAN.md`](PLAN.md) — implementation plan and early design decisions.
 
 ## Troubleshooting

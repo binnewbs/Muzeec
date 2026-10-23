@@ -33,6 +33,7 @@ export type MuzeecApi = {
   likeStatus: (input: { videoId: string }) => Promise<Result<Rating>>
   playlistCreate: (input: { title: string; videoId?: string }) => Promise<Result<string>>
   playlistAdd: (input: { playlistId: string; videoId: string }) => Promise<Result<void>>
+  playlistRemove: (input: { playlistId: string; videoId: string; setVideoId: string }) => Promise<Result<void>>
   playlistDelete: (input: { playlistId: string }) => Promise<Result<void>>
   playlistRename: (input: { playlistId: string; title: string }) => Promise<Result<void>>
   playlistMove: (input: {
@@ -53,6 +54,7 @@ export type MuzeecApi = {
   lyricsClearCache: () => Promise<Result<boolean>>
   getSettings: () => Promise<Result<AppSettings>>
   setSettings: (patch: Partial<AppSettings>) => Promise<Result<AppSettings>>
+  presenceAvailable: () => Promise<Result<boolean>>
   setPlayerState: (state: PlayerState) => Promise<Result<boolean>>
   windowMinimize: () => Promise<Result<void>>
   windowToggleMaximize: () => Promise<Result<void>>
